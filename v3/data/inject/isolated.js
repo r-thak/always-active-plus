@@ -3,6 +3,7 @@
   https://page-visibility.vercel.app/
   https://codepen.io/calebnance/full/nXPaKN
   https://cdpn.io/tobiasdev/fullpage/oGewQR?anon=true&view=
+  https://oncode-frontend.github.io/tab_detector/
 */
 
 let port;

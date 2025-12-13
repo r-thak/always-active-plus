@@ -36,16 +36,17 @@
     }
   });
 
+  const vstate = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
   const once = {
     focus: true,
-    visibilitychange: true,
-    webkitvisibilitychange: true
+    // if document is hidden allow one time event
+    visibilitychange: vstate.get.call(document) === 'hidden',
+    webkitvisibilitychange: vstate.get.call(document) === 'hidden'
   };
 
   /* prevent redirect when hidden */
   if (window.top === window && typeof navigation !== 'undefined') {
     // Save the original property descriptor
-    const vstate = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
     const redirect = e => {
       if (redirect.href) {
         console.info('[Always Active]', 'an attempt to redirect is being blocked', redirect.href);

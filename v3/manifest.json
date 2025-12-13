@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "version": "0.4.5",
+  "version": "0.4.6",
   "name": "Always active Window - Always Visible",
   "default_locale": "en",
   "description": "__MSG_description__",
@@ -43,7 +43,10 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "{4b7825da-0dd1-44f9-9717-bee5b2408af6}",
-      "strict_min_version": "128.0"
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
     }
   }
 }
