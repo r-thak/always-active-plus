@@ -13,8 +13,8 @@ same installation.
    [AMO API keys page](https://addons.mozilla.org/developers/addon/api/key/).
 3. In the GitHub repository, open **Settings → Secrets and variables → Actions**
    and create these repository secrets:
-   - `AMO_JWT_ISSUER`: the AMO JWT issuer/API key.
-   - `AMO_JWT_SECRET`: the AMO JWT secret.
+   - `AMO_API_KEY`: the AMO API key (JWT issuer).
+   - `AMO_API_SECRET`: the AMO API secret (JWT secret).
 4. Review `amo-metadata.json`. Its metadata is used to create the first public
    listing. Complete any additional listing text, screenshots, and support
    details requested by AMO after the first submission.

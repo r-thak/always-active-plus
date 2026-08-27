@@ -90,16 +90,16 @@ jobs:
 
       - name: Check AMO credentials
         env:
-          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
-          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          AMO_API_KEY: ${{ secrets.AMO_API_KEY }}
+          AMO_API_SECRET: ${{ secrets.AMO_API_SECRET }}
         run: |
-          test -n "$AMO_JWT_ISSUER" || { echo "Missing AMO_JWT_ISSUER secret" >&2; exit 1; }
-          test -n "$AMO_JWT_SECRET" || { echo "Missing AMO_JWT_SECRET secret" >&2; exit 1; }
+          test -n "$AMO_API_KEY" || { echo "Missing AMO_API_KEY secret" >&2; exit 1; }
+          test -n "$AMO_API_SECRET" || { echo "Missing AMO_API_SECRET secret" >&2; exit 1; }
 
       - name: Submit listed version to Firefox Add-ons
         env:
-          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
-          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          WEB_EXT_API_KEY: ${{ secrets.AMO_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_API_SECRET }}
         run: >-
           npx --yes web-ext@10.4.0 sign
           --source-dir v3
