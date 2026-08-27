@@ -27,8 +27,8 @@ same installation.
 3. Create and push a matching tag, for example:
 
    ```sh
-   git tag v0.4.7
-   git push origin v0.4.7
+   git tag v1.0.0
+   git push origin v1.0.0
    ```
 
 The `Firefox add-on` workflow runs tests, lints and packages the extension,
