@@ -11,6 +11,11 @@ textarea {
   width: 100%;
   box-sizing: border-box;
 }
+#blockedKeys {
+  box-sizing: border-box;
+  padding: 5px;
+  width: 100%;
+}
 button,
 input[type=submit],
 input[type=button] {

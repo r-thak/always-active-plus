@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "version": "0.4.6",
-  "name": "Always active Window - Always Visible",
+  "version": "0.4.7",
+  "name": "Always Active Plus",
   "default_locale": "en",
   "description": "__MSG_description__",
   "permissions": [
@@ -12,14 +12,14 @@
     "*://*/*"
   ],
   "action": {
-    "default_title": "The extension is by default inactive for all websites (indicated by a gray icon). Use this button to toggle the current site to be included in the activation list (changing the icon to blue). The page will automatically reload after you make changes.",
+    "default_title": "Toggle the current site in the inclusion or exception list, according to the site mode selected on the options page. The page reloads automatically after a change.",
     "default_icon": {
       "16": "data/icons/disabled/16.png",
       "32": "data/icons/disabled/32.png",
       "48": "data/icons/disabled/48.png"
     }
   },
-  "homepage_url": "https://webextension.org/listing/always-active.html",
+  "homepage_url": "https://github.com/r-thak/always-active-plus",
   "icons": {
     "16": "data/icons/16.png",
     "32": "data/icons/32.png",
@@ -42,8 +42,8 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "{4b7825da-0dd1-44f9-9717-bee5b2408af6}",
-      "strict_min_version": "128.0",
+      "id": "{f624adbf-e99a-451e-b3ee-582fe07c54d4}",
+      "strict_min_version": "142.0",
       "data_collection_permissions": {
         "required": ["none"]
       }

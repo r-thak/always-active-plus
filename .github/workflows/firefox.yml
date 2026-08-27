@@ -1,0 +1,121 @@
+name: Firefox add-on
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firefox-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Check release version
+        id: version
+        shell: bash
+        run: |
+          version="$(node -p "require('./v3/manifest.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match manifest version $version" >&2
+            exit 1
+          fi
+
+      - name: Run behavior tests
+        run: node --test test/*.test.js
+
+      - name: Lint extension
+        run: npx --yes web-ext@10.4.0 lint --source-dir v3
+
+      - name: Build extension package
+        run: >-
+          npx --yes web-ext@10.4.0 build
+          --source-dir v3
+          --artifacts-dir releases
+          --filename always-active-plus-${{ steps.version.outputs.version }}.zip
+          --overwrite-dest
+          --no-input
+
+      - name: Create checksum
+        working-directory: releases
+        run: sha256sum always-active-plus-${{ steps.version.outputs.version }}.zip > SHA256SUMS
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: always-active-plus-${{ steps.version.outputs.version }}
+          path: |
+            releases/always-active-plus-${{ steps.version.outputs.version }}.zip
+            releases/SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download validated package
+        uses: actions/download-artifact@v4
+        with:
+          name: always-active-plus-${{ needs.build.outputs.version }}
+          path: releases
+
+      - name: Check AMO credentials
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          test -n "$AMO_JWT_ISSUER" || { echo "Missing AMO_JWT_ISSUER secret" >&2; exit 1; }
+          test -n "$AMO_JWT_SECRET" || { echo "Missing AMO_JWT_SECRET secret" >&2; exit 1; }
+
+      - name: Submit listed version to Firefox Add-ons
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: >-
+          npx --yes web-ext@10.4.0 sign
+          --source-dir v3
+          --artifacts-dir releases/amo
+          --channel listed
+          --amo-metadata amo-metadata.json
+          --approval-timeout 0
+          --no-input
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          "releases/always-active-plus-${{ needs.build.outputs.version }}.zip#Extension package"
+          "releases/SHA256SUMS#SHA-256 checksums"
+          --verify-tag
+          --generate-notes
+          --title "Always Active Plus ${{ needs.build.outputs.version }}"

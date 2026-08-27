@@ -1,18 +1,31 @@
-## Always Active Window
+# Always Active Plus
 
 This extension protects against web pages tracking the activity state of the page. Some websites use this track to only offer services when the tab is active. By installing this extension a small script is injected into every webpage which overwrites the "document.visibilityState", and "document.hidden" properties to pretend the tab is always in the active state (document.visibilityState = 'visible' and document.hidden = false).
+
+It can also suppress mouse and pointer boundary events caused by moving onto an external overlay. Configure keyboard events to block from the options page using a `KeyboardEvent.key`, `KeyboardEvent.code`, or numeric `keyCode` value; `AltGraph` is blocked by default. A hostname policy can opt out with `"keyboard"`, `"mouseleave"`, or `"mouseout"`.
+
+By default, hostnames are an opt-in list. The options page can switch to all-sites mode, where the same list becomes a set of hostname exceptions.
 
 ## YouTube Preview
 [![YouTube Preview](https://img.youtube.com/vi/7gr44trZr_o/0.jpg)](https://www.youtube.com/watch?v=7gr44trZr_o)
 
-## Links:
-  * FAQs Page: https://webextension.org/listing/always-active.html
-  * Chrome Webstore: https://chromewebstore.google.com/detail/always-active-window-alwa/ehllkhjndgnlokhomdlhgbineffifcbj
-  * Edge Add-ons: https://microsoftedge.microsoft.com/addons/detail/mpappcpgjachepaibhgpbnhhmneojmkc
-  * Firefox Add-ons: https://addons.mozilla.org/firefox/addon/always-visible/
-  * Opera Addons: https://addons.opera.com/extensions/details/always-active-window-always-visible/
-  * Whale Store: https://store.whale.naver.com/detail/ibidfllpokiehhoolhnpbgjcokecjlfj
+## Development
+
+```sh
+node --test test/*.test.js
+npx --yes web-ext@10.4.0 lint --source-dir v3
+npx --yes web-ext@10.4.0 build --source-dir v3
+```
+
+Tagged versions are validated, submitted to Firefox Add-ons, and attached to a
+GitHub Release automatically. See [Firefox release setup](docs/FIREFOX_SUBMISSION.md).
+
+## Links
+
+- [Source code](https://github.com/r-thak/always-active-plus)
+- [Issue tracker](https://github.com/r-thak/always-active-plus/issues)
+- [Privacy statement](PRIVACY.md)
 
 ## License
 
-Allow Right-Click is an open-source project released under [MPL-2.0](https://github.com/lunu-bounir/allow-right-click.html/blob/master/LICENSE)
+Always Active Plus is released under [MPL-2.0](LICENSE).

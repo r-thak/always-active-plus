@@ -1,0 +1,20 @@
+{
+  "summary": {
+    "en-US": "Keep selected tabs active and control the browser events pages use to detect inactivity."
+  },
+  "description": {
+    "en-US": "Always Active Plus keeps user-selected tabs active by controlling the visibility, focus, mouse, pointer, and configurable keyboard events exposed to those pages. By default it runs only on explicitly included hostnames. An optional all-sites mode treats the hostname list as exceptions instead. Settings remain in local extension storage, and the extension does not collect or transmit user data."
+  },
+  "categories": [
+    "privacy-security",
+    "tabs"
+  ],
+  "homepage": {
+    "en-US": "https://github.com/r-thak/always-active-plus"
+  },
+  "requires_payment": false,
+  "version": {
+    "license": "MPL-2.0",
+    "approval_notes": "The extension contains readable, unminified JavaScript with no bundling, generated code, remote code, or third-party libraries. The v3 directory is the exact extension source. It stores preferences locally with chrome.storage.local and does not collect or transmit user data. The broad host permission supports the user-controlled all-sites mode; the default mode injects only on hostnames the user explicitly enables. Build with: npx --yes web-ext@10.4.0 build --source-dir v3"
+  }
+}

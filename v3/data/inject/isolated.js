@@ -30,6 +30,8 @@ const update = () => chrome.storage.local.get({
   'redirect': true,
   'mouseleave': true,
   'mouseout': true,
+  'keyboard': true,
+  'blockedKeys': ['AltGraph'],
   'visibility': true,
   'pointercapture': true,
   'policies': null
@@ -49,6 +51,11 @@ const update = () => chrome.storage.local.get({
   port.dataset.redirect = policy.includes('redirect') ? false : prefs.redirect;
   port.dataset.mouseleave = policy.includes('mouseleave') ? false : prefs.mouseleave;
   port.dataset.mouseout = policy.includes('mouseout') ? false : prefs.mouseout;
+  port.dataset.keyboard = policy.includes('keyboard') ? false : prefs.keyboard;
+  port.dataset.blockedKeys = (Array.isArray(prefs.blockedKeys) ? prefs.blockedKeys : [])
+    .map(key => String(key).trim().toLowerCase())
+    .filter(Boolean)
+    .join('\n');
   port.dataset.visibility = policy.includes('visibility') ? false : prefs.visibility;
   port.dataset.pointercapture = policy.includes('pointercapture') ? false : prefs.pointercapture;
 });

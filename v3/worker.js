@@ -56,22 +56,30 @@ const activate = () => {
 
   chrome.storage.local.get({
     enabled: true,
+    allSites: false,
     hosts: []
   }, async prefs => {
     try {
       await chrome.scripting.unregisterContentScripts();
 
-      if (prefs.enabled && prefs.hosts.length) {
+      const legacyAllSites = !prefs.allSites && prefs.hosts.includes('*');
+      const allSites = prefs.allSites || legacyAllSites;
+      const hosts = legacyAllSites ? [] : prefs.hosts.filter(host => host !== '*');
+
+      if (prefs.enabled && (allSites || hosts.length)) {
         const props = {
           'allFrames': true,
           'matchOriginAsFallback': true,
           'runAt': 'document_start'
         };
-        if (prefs.hosts.includes('*')) {
+        if (allSites) {
           props['matches'] = ['*://*/*'];
+          if (hosts.length) {
+            props['excludeMatches'] = hosts.map(h => '*://' + h + '/*');
+          }
         }
         else {
-          props['matches'] = prefs.hosts.map(h => '*://' + h + '/*');
+          props['matches'] = hosts.map(h => '*://' + h + '/*');
         }
 
         await chrome.scripting.registerContentScripts([{
@@ -101,7 +109,7 @@ const activate = () => {
 chrome.runtime.onStartup.addListener(activate);
 chrome.runtime.onInstalled.addListener(activate);
 chrome.storage.onChanged.addListener(ps => {
-  if (ps.enabled || ps.hosts) {
+  if (ps.enabled || ps.allSites || ps.hosts) {
     activate();
   }
 });
@@ -109,10 +117,13 @@ activate.actions = [];
 
 /* action */
 chrome.action.onClicked.addListener(tab => chrome.storage.local.get({
+  allSites: false,
   hosts: []
 }, async prefs => {
   if (tab.url?.startsWith('http')) {
-    const {hosts} = prefs;
+    const legacyAllSites = !prefs.allSites && prefs.hosts.includes('*');
+    const allSites = prefs.allSites || legacyAllSites;
+    const hosts = legacyAllSites ? [] : prefs.hosts.filter(host => host !== '*');
 
     const a = await chrome.scripting.executeScript({
       target: {
@@ -133,24 +144,44 @@ chrome.action.onClicked.addListener(tab => chrome.storage.local.get({
       const n = hosts.indexOf(top);
       let message = '';
       let badge = '✓';
-      // removing from the list
-      if (n >= 0) {
-        message = 'Removed the following hostnames:\n\n' + hostnames.join(', ') + '\n';
-        // remove all hostnames from the list
-        for (const hostname of hostnames) {
-          const n = hosts.indexOf(hostname);
-          if (n >= 0) {
-            hosts.splice(n, 1);
+      if (allSites) {
+        // Listed hostnames are exceptions while all-sites mode is enabled.
+        if (n >= 0) {
+          message = 'Enabled the extension on the following hostnames by removing their exceptions:\n\n' + hostnames.join(', ') + '\n';
+          for (const hostname of hostnames) {
+            const index = hosts.indexOf(hostname);
+            if (index >= 0) {
+              hosts.splice(index, 1);
+            }
+          }
+        }
+        else {
+          message = 'Disabled the extension on the following hostnames by adding exceptions:\n\n' + hostnames.join(', ') + '\n';
+          badge = '×';
+          for (const hostname of hostnames) {
+            if (hosts.includes(hostname) === false) {
+              hosts.push(hostname);
+            }
           }
         }
       }
-      // adding to the list
       else {
-        message = 'Added the following hostnames:\n' + hostnames.join(', ') + '\n';
-        for (const hostname of hostnames) {
-          const n = hosts.indexOf(hostname);
-          if (n < 0) {
-            hosts.push(hostname);
+        // Listed hostnames are inclusions in the default opt-in mode.
+        if (n >= 0) {
+          message = 'Removed the following hostnames:\n\n' + hostnames.join(', ') + '\n';
+          for (const hostname of hostnames) {
+            const index = hosts.indexOf(hostname);
+            if (index >= 0) {
+              hosts.splice(index, 1);
+            }
+          }
+        }
+        else {
+          message = 'Added the following hostnames:\n' + hostnames.join(', ') + '\n';
+          for (const hostname of hostnames) {
+            if (hosts.includes(hostname) === false) {
+              hosts.push(hostname);
+            }
           }
         }
       }
@@ -159,18 +190,11 @@ chrome.action.onClicked.addListener(tab => chrome.storage.local.get({
           notify(tab.id, error);
         }
         else {
-          if (hosts.includes('*')) {
-            badge = '×';
-            message += `
-
-The presence of "*" in your host list causes all pages to match by default. To resolve this, visit the options page.`;
-          }
-
           activate.actions.push(() => {
             chrome.tabs.reload(tab.id);
             setTimeout(() => notify(tab.id, message, badge), 5000);
           });
-          chrome.storage.local.set({hosts});
+          chrome.storage.local.set({allSites, hosts});
         }
       });
     }
@@ -247,30 +271,3 @@ const mode = ({reason}) => {
   });
 };
 chrome.runtime.onInstalled.addListener(mode);
-
-/* FAQs & Feedback */
-{
-  const {management, runtime: {onInstalled, setUninstallURL, getManifest}, storage, tabs} = chrome;
-  if (navigator.webdriver !== true) {
-    const {homepage_url: page, name, version} = getManifest();
-    onInstalled.addListener(({reason, previousVersion}) => {
-      management.getSelf(({installType}) => installType === 'normal' && storage.local.get({
-        'faqs': true,
-        'last-update': 0
-      }, prefs => {
-        if (reason === 'install' || (prefs.faqs && reason === 'update')) {
-          const doUpdate = (Date.now() - prefs['last-update']) / 1000 / 60 / 60 / 24 > 45;
-          if (doUpdate && previousVersion !== version) {
-            tabs.query({active: true, lastFocusedWindow: true}, tbs => tabs.create({
-              url: page + '?version=' + version + (previousVersion ? '&p=' + previousVersion : '') + '&type=' + reason,
-              active: reason === 'install',
-              ...(tbs && tbs.length && {index: tbs[0].index + 1})
-            }));
-            storage.local.set({'last-update': Date.now()});
-          }
-        }
-      }));
-    });
-    setUninstallURL(page + '?rd=feedback&name=' + encodeURIComponent(name) + '&version=' + version);
-  }
-}

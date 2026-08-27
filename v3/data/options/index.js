@@ -6,7 +6,19 @@ const notify = (message, timeout = 1000) => {
   notify.id = setTimeout(() => toast.textContent = '', timeout);
 };
 
+const updateHostMode = allSites => {
+  document.getElementById('host-mode-description').textContent = allSites ?
+    'The extension is active everywhere except on the hostnames listed below.' :
+    'The extension is inactive by default and only active on the hostnames listed below.';
+  document.getElementById('hosts').placeholder = allSites ?
+    'Excluded hostnames, separated by commas. Example:\n\nexample.com, *.example.com, www.example.com' :
+    'Included hostnames, separated by commas. Example:\n\nexample.com, *.example.com, www.example.com';
+};
+
+document.getElementById('allSites').addEventListener('change', e => updateHostMode(e.target.checked));
+
 chrome.storage.local.get({
+  'allSites': false,
   'visibilityState': true,
   'hidden': true,
   'blur': true,
@@ -16,11 +28,15 @@ chrome.storage.local.get({
   'pointercapture': true,
   'mouseleave': true,
   'mouseout': true,
+  'keyboard': true,
+  'blockedKeys': ['AltGraph'],
   'log': false,
-  'faqs': true,
   'policies': null,
   'hosts': []
 }, prefs => {
+  const legacyAllSites = !prefs.allSites && prefs.hosts.includes('*');
+  const allSites = prefs.allSites || legacyAllSites;
+  document.getElementById('allSites').checked = allSites;
   document.getElementById('visibilityState').checked = prefs.visibilityState;
   document.getElementById('hidden').checked = prefs.hidden;
   document.getElementById('focus').checked = prefs.focus;
@@ -30,10 +46,13 @@ chrome.storage.local.get({
   document.getElementById('blur').checked = prefs.blur;
   document.getElementById('mouseleave').checked = prefs.mouseleave;
   document.getElementById('mouseout').checked = prefs.mouseout;
+  document.getElementById('keyboard').checked = prefs.keyboard;
+  document.getElementById('blockedKeys').value = (Array.isArray(prefs.blockedKeys) ? prefs.blockedKeys : []).join(', ');
   document.getElementById('log').checked = prefs.log;
-  document.getElementById('faqs').checked = prefs.faqs;
   document.getElementById('policies').value = prefs.policies ? JSON.stringify(prefs.policies, null, '  ') : '';
-  document.getElementById('hosts').value = prefs.hosts.join(', ');
+  document.getElementById('hosts').value = legacyAllSites ? '' :
+    prefs.hosts.filter(host => host !== '*').join(', ');
+  updateHostMode(allSites);
 
   if (typeof navigation === 'undefined') {
     document.getElementById('redirect').checked = false;
@@ -44,17 +63,22 @@ chrome.storage.local.get({
 
 document.getElementById('save').addEventListener('click', async () => {
   const prefs = {
+    'allSites': document.getElementById('allSites').checked,
     'visibilityState': document.getElementById('visibilityState').checked,
     'hidden': document.getElementById('hidden').checked,
     'blur': document.getElementById('blur').checked,
     'mouseleave': document.getElementById('mouseleave').checked,
     'mouseout': document.getElementById('mouseout').checked,
+    'keyboard': document.getElementById('keyboard').checked,
+    'blockedKeys': [...new Set(document.getElementById('blockedKeys').value
+      .split(/[\n,]+/)
+      .map(key => key.trim())
+      .filter(Boolean))],
     'visibility': document.getElementById('visibility').checked,
     'pointercapture': document.getElementById('pointercapture').checked,
     'focus': document.getElementById('focus').checked,
     'redirect': document.getElementById('redirect').checked,
-    'log': document.getElementById('log').checked,
-    'faqs': document.getElementById('faqs').checked
+    'log': document.getElementById('log').checked
   };
 
   let policies = null;
@@ -72,6 +96,9 @@ document.getElementById('save').addEventListener('click', async () => {
 
   const hosts = [];
   for (const h of document.getElementById('hosts').value.split(/\s*,\s*/)) {
+    if (!h) {
+      continue;
+    }
     const msg = await chrome.runtime.sendMessage({
       method: 'validate',
       hosts: [h]
@@ -116,12 +143,12 @@ document.getElementById('reset').addEventListener('click', e => {
 
 // support
 document.getElementById('support').addEventListener('click', () => chrome.tabs.create({
-  url: chrome.runtime.getManifest().homepage_url + '?rd=donate'
+  url: chrome.runtime.getManifest().homepage_url
 }));
 
 // report
 document.getElementById('report').addEventListener('click', () => chrome.tabs.create({
-  url: chrome.runtime.getManifest().homepage_url + '#reviews'
+  url: chrome.runtime.getManifest().homepage_url + '/issues/new'
 }));
 
 // test

@@ -1,5 +1,5 @@
 {
   "description": {
-    "message": "Simulate all whitelisted browser windows as active by spoofing the visibility state event and more!"
+    "message": "Keep selected tabs active by controlling visibility, focus, pointer-boundary, and configurable keyboard events."
   }
 }

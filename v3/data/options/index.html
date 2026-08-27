@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Options Page :: Always active Window - Always Visible</title>
+  <title>Options :: Always Active Plus</title>
   <link rel="stylesheet" type="text/css" href="index.css">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body>
   <div class="grid">
+    <label for="allSites">Enable on all sites by default (use hostnames as exceptions)</label>
+    <input type="checkbox" id="allSites">
     <div class="disabled" style="display: contents;">
       <label for="visibilityState">Overwrite "document.visibilityState"</label>
       <input type="checkbox" id="visibilityState">
@@ -19,10 +21,12 @@
     <input type="checkbox" id="focus">
     <label for="visibility">Globally block "visibility" events</label>
     <input type="checkbox" id="visibility">
-    <label for="mouseleave">Globally block "mouseleave" events</label>
+    <label for="mouseleave">Globally block "mouseleave" and "pointerleave" page-exit events</label>
     <input type="checkbox" id="mouseleave">
-    <label for="mouseout">Globally block "mouseout" events</label>
+    <label for="mouseout">Globally block "mouseout" and "pointerout" page-exit events</label>
     <input type="checkbox" id="mouseout">
+    <label for="keyboard">Globally block configured keyboard events</label>
+    <input type="checkbox" id="keyboard">
     <label for="pointercapture">Globally block "lostpointercapture" events</label>
     <input type="checkbox" id="pointercapture">
     <div id="redirect-container">
@@ -31,22 +35,24 @@
     </div>
     <label for="log">Display logs (for debugging purpose only)</label>
     <input type="checkbox" id="log">
-    <label for="faqs">Open FAQs page on updates (recommended)</label>
-    <input type="checkbox" id="faqs">
   </div>
+  <h1>Blocked Keyboard Events</h1>
+  <p>Comma-separated <code>KeyboardEvent.key</code>, <code>KeyboardEvent.code</code>, or numeric <code>keyCode</code> values.</p>
+  <input type="text" id="blockedKeys" placeholder="AltGraph, AltRight, 225">
   <h1>List of Hostnames</h1>
-  <textarea id="hosts" rows="8" placeholder="List of hostnames where the extension is active, separated by commas. You can modify this list by clicking the action button to add or remove hostnames. Enabling the extension on all hostnames with '*' is possible but discouraged, as it may negatively impact performance. Instead, limit the extension's use to hostnames that require an active tab to function properly. Example:
+  <p id="host-mode-description"></p>
+  <textarea id="hosts" rows="8" placeholder="Hostnames separated by commas. Use the all-sites toggle to choose whether these are inclusions or exceptions. Example:
 
 example.com, *.example.com, www.example.com"></textarea>
   <h1><a data-href="faq6" target="_blank">Policies</a></h1>
   <textarea id="policies" rows="10" placeholder='A JSON object to prevent blocking of some events that conflict with particular hostnames. Example:
 {
-  "docs.google.com": ["blur"]
+  "docs.google.com": ["blur", "keyboard"]
 }'></textarea>
 
   <p>
-    <input type="button" id="support" value="Support Development">
-    <input type="button" id="report" value="Report Bugs">
+    <input type="button" id="support" value="Project Home">
+    <input type="button" id="report" value="Report Bug">
     <input type="button" id="test" value="Test Rules">
   </p>
   <div>

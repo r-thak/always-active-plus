@@ -18,6 +18,8 @@
     e.stopImmediatePropagation();
   };
 
+  const isPageExit = e => e.relatedTarget === null;
+
   /* visibility */
   Object.defineProperty(document, 'visibilityState', {
     get() {
@@ -159,21 +161,101 @@
   document.addEventListener('blur', onblur, true);
   window.addEventListener('blur', onblur, true);
 
-  /* mouse */
-  window.addEventListener('mouseleave', e => {
+  /* mouse and pointer boundary events */
+  const reentry = {
+    mouse: false,
+    pointer: false
+  };
+
+  const onleave = e => {
     if (port.dataset.enabled === 'true' && port.dataset.mouseleave !== 'false') {
-      if (e.target === document || e.target === window) {
+      if (isPageExit(e)) {
+        reentry[e.type.startsWith('pointer') ? 'pointer' : 'mouse'] = true;
+      }
+      if (isPageExit(e) || e.target === document || e.target === window) {
         return block(e);
       }
     }
-  }, true);
-  window.addEventListener('mouseout', e => {
+  };
+  window.addEventListener('mouseleave', onleave, true);
+  window.addEventListener('pointerleave', onleave, true);
+
+  const onout = e => {
     if (port.dataset.enabled === 'true' && port.dataset.mouseout !== 'false') {
-      if (e.target === document.documentElement || e.target === document.body) {
+      if (isPageExit(e)) {
+        reentry[e.type.startsWith('pointer') ? 'pointer' : 'mouse'] = true;
+      }
+      if (isPageExit(e) || e.target === document.documentElement || e.target === document.body) {
         return block(e);
       }
     }
+  };
+  window.addEventListener('mouseout', onout, true);
+  window.addEventListener('pointerout', onout, true);
+
+  const onenter = e => {
+    const family = e.type.startsWith('pointer') ? 'pointer' : 'mouse';
+    if (
+      port.dataset.enabled === 'true' &&
+      port.dataset.mouseleave !== 'false' &&
+      reentry[family] &&
+      isPageExit(e)
+    ) {
+      return block(e);
+    }
+  };
+  window.addEventListener('mouseenter', onenter, true);
+  window.addEventListener('pointerenter', onenter, true);
+
+  const onover = e => {
+    const family = e.type.startsWith('pointer') ? 'pointer' : 'mouse';
+    if (
+      port.dataset.enabled === 'true' &&
+      port.dataset.mouseout !== 'false' &&
+      reentry[family] &&
+      isPageExit(e)
+    ) {
+      return block(e);
+    }
+  };
+  window.addEventListener('mouseover', onover, true);
+  window.addEventListener('pointerover', onover, true);
+
+  window.addEventListener('mousemove', () => {
+    reentry.mouse = false;
   }, true);
+  window.addEventListener('pointermove', () => {
+    reentry.pointer = false;
+  }, true);
+
+  /* keyboard */
+  const shouldBlockKey = e => {
+    const keys = new Set((port.dataset.blockedKeys || '').split('\n').filter(Boolean));
+    if (keys.has(String(e.key).toLowerCase()) ||
+        keys.has(String(e.code).toLowerCase()) ||
+        keys.has(String(e.keyCode))) {
+      return true;
+    }
+    try {
+      return keys.has('altgraph') && e.getModifierState('AltGraph');
+    }
+    catch (error) {
+      return false;
+    }
+  };
+
+  const onkey = e => {
+    if (
+      port.dataset.enabled === 'true' &&
+      port.dataset.keyboard !== 'false' &&
+      shouldBlockKey(e)
+    ) {
+      return block(e);
+    }
+  };
+  window.addEventListener('keydown', onkey, true);
+  window.addEventListener('keypress', onkey, true);
+  window.addEventListener('keyup', onkey, true);
 
   /* requestAnimationFrame */
   let lastTime = 0;
