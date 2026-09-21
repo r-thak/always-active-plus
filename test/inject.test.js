@@ -19,6 +19,9 @@ class EventTarget {
     event.target ||= this;
     for (const listener of this.listeners.get(event.type) || []) {
       listener.call(this, event);
+      if (event.immediatePropagationStopped) {
+        break;
+      }
     }
   }
 }
@@ -39,7 +42,7 @@ class Document extends EventTarget {
     super();
     this.documentElement = new Element();
     this.body = new Element();
-    this.hidden = false;
+    this._hidden = false;
   }
 
   createElement() {
@@ -58,9 +61,22 @@ class Document extends EventTarget {
 Object.defineProperty(Document.prototype, 'visibilityState', {
   configurable: true,
   get() {
-    return this.hidden ? 'hidden' : 'visible';
+    return this._hidden ? 'hidden' : 'visible';
   }
 });
+
+Object.defineProperty(Document.prototype, 'hidden', {
+  configurable: true,
+  get() {
+    return this._hidden;
+  }
+});
+
+const nativeDocumentDescriptors = {
+  hasFocus: Object.getOwnPropertyDescriptor(Document.prototype, 'hasFocus'),
+  hidden: Object.getOwnPropertyDescriptor(Document.prototype, 'hidden'),
+  visibilityState: Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState')
+};
 
 const createEvent = (type, props = {}) => ({
   type,
@@ -79,6 +95,11 @@ const createEvent = (type, props = {}) => ({
 });
 
 const loadInjection = () => {
+  // Each browser document has its own realm. Restore the test double so an
+  // earlier injection cannot become this injection's apparent native getter.
+  for (const [name, descriptor] of Object.entries(nativeDocumentDescriptors)) {
+    Object.defineProperty(Document.prototype, name, descriptor);
+  }
   const document = new Document();
   const window = new EventTarget();
   window.top = window;
@@ -136,6 +157,58 @@ test('does not block ordinary movement between page elements', () => {
   window.dispatchEvent(event);
 
   assert.equal(event.defaultPrevented, undefined);
+});
+
+test('spoofs visibility getters even when a page reads Document.prototype directly', () => {
+  const {document, port} = loadInjection();
+  document._hidden = true;
+
+  const visibilityGetter = Object.getOwnPropertyDescriptor(
+    Document.prototype,
+    'visibilityState'
+  ).get;
+  const hiddenGetter = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden').get;
+
+  assert.equal(document.visibilityState, 'visible');
+  assert.equal(document.hidden, false);
+  assert.equal(visibilityGetter.call(document), 'visible');
+  assert.equal(hiddenGetter.call(document), false);
+
+  port.dataset.enabled = 'false';
+  assert.equal(document.visibilityState, 'hidden');
+  assert.equal(document.hidden, true);
+});
+
+test('blocks visibility events captured from window before page listeners can observe them', () => {
+  const {window} = loadInjection();
+  const event = createEvent('visibilitychange', {target: {}});
+  let observed = false;
+  window.addEventListener('visibilitychange', () => {
+    observed = true;
+  });
+
+  window.dispatchEvent(event);
+
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(event.immediatePropagationStopped, true);
+  assert.equal(observed, false);
+});
+
+test('blocks focus boundary events when focus leaves or re-enters the browser window', () => {
+  const {window} = loadInjection();
+  const exit = createEvent('focusout', {relatedTarget: null});
+  const reentry = createEvent('focusin', {relatedTarget: null});
+
+  window.dispatchEvent(exit);
+  window.dispatchEvent(reentry);
+
+  assert.equal(exit.defaultPrevented, true);
+  assert.equal(reentry.defaultPrevented, true);
+  window.dispatchEvent(createEvent('pointerdown'));
+
+  const ordinaryFocus = createEvent('focusin', {relatedTarget: null});
+  window.dispatchEvent(ordinaryFocus);
+  assert.equal(ordinaryFocus.defaultPrevented, undefined);
 });
 
 test('hides the matching re-entry after a blocked overlay exit', () => {

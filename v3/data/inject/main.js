@@ -21,29 +21,48 @@
   const isPageExit = e => e.relatedTarget === null;
 
   /* visibility */
-  Object.defineProperty(document, 'visibilityState', {
-    get() {
-      if (port.dataset.enabled === 'false') {
-        return port.dataset.hidden === 'true' ? 'hidden' : 'visible';
-      }
-      return 'visible';
+  const descriptors = Object.fromEntries([
+    'hidden',
+    'visibilityState',
+    'webkitHidden',
+    'webkitVisibilityState'
+  ].map(name => [name, Object.getOwnPropertyDescriptor(Document.prototype, name)]));
+  const values = Object.fromEntries(Object.keys(descriptors).map(name => [name, document[name]]));
+  const original = name => {
+    const getter = descriptors[name]?.get;
+    return getter ? getter.call(document) : values[name];
+  };
+  const overrideDocumentGetter = (name, getter) => {
+    const descriptor = descriptors[name];
+    if (descriptor?.configurable) {
+      Object.defineProperty(Document.prototype, name, {...descriptor, get: getter});
     }
+    else {
+      Object.defineProperty(document, name, {configurable: true, get: getter});
+    }
+  };
+
+  const visibilityState = () => original('visibilityState') ||
+    (original('hidden') ? 'hidden' : 'visible');
+  const webkitVisibilityState = () => original('webkitVisibilityState') || visibilityState();
+  overrideDocumentGetter('visibilityState', () => {
+    if (port.dataset.enabled === 'false') {
+      return visibilityState();
+    }
+    return 'visible';
   });
-  Object.defineProperty(document, 'webkitVisibilityState', {
-    get() {
-      if (port.dataset.enabled === 'false') {
-        return port.dataset.hidden === 'true' ? 'hidden' : 'visible';
-      }
-      return 'visible';
+  overrideDocumentGetter('webkitVisibilityState', () => {
+    if (port.dataset.enabled === 'false') {
+      return webkitVisibilityState();
     }
+    return 'visible';
   });
 
-  const vstate = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
   const once = {
     focus: true,
     // if document is hidden allow one time event
-    visibilitychange: vstate.get.call(document) === 'hidden',
-    webkitvisibilitychange: vstate.get.call(document) === 'hidden'
+    visibilitychange: visibilityState() === 'hidden',
+    webkitvisibilitychange: webkitVisibilityState() === 'hidden'
   };
 
   /* prevent redirect when hidden */
@@ -65,7 +84,7 @@
       delete redirect.href;
       removeEventListener('beforeunload', redirect);
       try {
-        const state = vstate.get.call(document);
+        const state = visibilityState();
         if (state === 'hidden') {
           if (port.dataset.enabled === 'true' && port.dataset.redirect !== 'false') {
             addEventListener('beforeunload', redirect);
@@ -76,7 +95,7 @@
     });
   }
 
-  document.addEventListener('visibilitychange', e => {
+  const onvisibilitychange = e => {
     port.dispatchEvent(new Event('state'));
     if (port.dataset.enabled === 'true' && port.dataset.visibility !== 'false') {
       if (once.visibilitychange) {
@@ -85,8 +104,8 @@
       }
       return block(e);
     }
-  }, true);
-  document.addEventListener('webkitvisibilitychange', e => {
+  };
+  const onwebkitvisibilitychange = e => {
     if (port.dataset.enabled === 'true' && port.dataset.visibility !== 'false') {
       if (once.webkitvisibilitychange) {
         once.webkitvisibilitychange = false;
@@ -94,7 +113,13 @@
       }
       return block(e);
     }
-  }, true);
+  };
+  // visibilitychange targets document, but window capture listeners run first.
+  // Register in both places so page listeners cannot observe that transition.
+  document.addEventListener('visibilitychange', onvisibilitychange, true);
+  window.addEventListener('visibilitychange', onvisibilitychange, true);
+  document.addEventListener('webkitvisibilitychange', onwebkitvisibilitychange, true);
+  window.addEventListener('webkitvisibilitychange', onwebkitvisibilitychange, true);
   window.addEventListener('pagehide', e => {
     if (port.dataset.enabled === 'true' && port.dataset.visibility !== 'false') {
       block(e);
@@ -109,24 +134,13 @@
   }, true);
 
   /* hidden */
-  Object.defineProperty(document, 'hidden', {
-    get() {
-      if (port.dataset.enabled === 'false') {
-        return port.dataset.hidden === 'true';
-      }
-      return false;
-    }
-  });
-  Object.defineProperty(document, 'webkitHidden', {
-    get() {
-      if (port.dataset.enabled === 'false') {
-        return port.dataset.hidden === 'true';
-      }
-      return false;
-    }
-  });
+  overrideDocumentGetter('hidden', () => port.dataset.enabled === 'false' ?
+    Boolean(original('hidden')) : false);
+  overrideDocumentGetter('webkitHidden', () => port.dataset.enabled === 'false' ?
+    Boolean(original('webkitHidden') ?? original('hidden')) : false);
 
   /* focus */
+  let focusReentry = false;
   Document.prototype.hasFocus = new Proxy(Document.prototype.hasFocus, {
     apply(target, self, args) {
       if (port.dataset.enabled === 'true' && port.dataset.focus !== 'false') {
@@ -138,7 +152,8 @@
 
   const onfocus = e => {
     if (port.dataset.enabled === 'true' && port.dataset.focus !== 'false') {
-      if (e.target === document || e.target === window) {
+      if (e.target === document || e.target === window ||
+          (focusReentry && isPageExit(e))) {
         if (once.focus) {
           once.focus = false;
           return;
@@ -153,13 +168,38 @@
   /* blur */
   const onblur = e => {
     if (port.dataset.enabled === 'true' && port.dataset.blur !== 'false') {
-      if (e.target === document || e.target === window) {
+      if (e.target === document || e.target === window || isPageExit(e)) {
+        if (isPageExit(e)) {
+          focusReentry = true;
+        }
         return block(e);
       }
     }
   };
   document.addEventListener('blur', onblur, true);
   window.addEventListener('blur', onblur, true);
+
+  /* focus boundary events */
+  const onfocusout = e => {
+    if (port.dataset.enabled === 'true' && port.dataset.blur !== 'false' && isPageExit(e)) {
+      focusReentry = true;
+      return block(e);
+    }
+  };
+  const onfocusin = e => {
+    if (port.dataset.enabled === 'true' && port.dataset.focus !== 'false' &&
+        focusReentry && isPageExit(e)) {
+      return block(e);
+    }
+  };
+  window.addEventListener('focusout', onfocusout, true);
+  window.addEventListener('focusin', onfocusin, true);
+  const resetFocusReentry = () => {
+    focusReentry = false;
+  };
+  window.addEventListener('pointerdown', resetFocusReentry, true);
+  window.addEventListener('touchstart', resetFocusReentry, true);
+  window.addEventListener('keydown', resetFocusReentry, true);
 
   /* mouse and pointer boundary events */
   const reentry = {
@@ -261,7 +301,7 @@
   let lastTime = 0;
   window.requestAnimationFrame = new Proxy(window.requestAnimationFrame, {
     apply(target, self, args) {
-      if (port.dataset.enabled === 'true' && port.dataset.hidden === 'true') {
+      if (port.dataset.enabled === 'true' && original('hidden')) {
         const currTime = Date.now();
         const timeToCall = Math.max(0, 16 - (currTime - lastTime));
         const id = setTimeout(function() {
@@ -277,7 +317,7 @@
   });
   window.cancelAnimationFrame = new Proxy(window.cancelAnimationFrame, {
     apply(target, self, args) {
-      if (port.dataset.enabled === 'true' && port.dataset.hidden === 'true') {
+      if (port.dataset.enabled === 'true' && original('hidden')) {
         clearTimeout(args[0]);
       }
       return Reflect.apply(target, self, args);
