@@ -15,8 +15,8 @@ exceptions.
 
 ```sh
 node --test test/*.test.js
-npx --yes web-ext@10.4.0 lint --source-dir v3
-npx --yes web-ext@10.4.0 build --source-dir v3
+npx --yes web-ext@10.5.0 lint --source-dir v3
+npx --yes web-ext@10.5.0 build --source-dir v3
 ```
 
 To create a Chrome-compatible MV3 build and ZIP package:

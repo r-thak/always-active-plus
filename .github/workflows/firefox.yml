@@ -43,11 +43,11 @@ jobs:
         run: node --test test/*.test.js
 
       - name: Lint extension
-        run: npx --yes web-ext@10.4.0 lint --source-dir v3
+        run: npx --yes web-ext@10.5.0 lint --source-dir v3
 
       - name: Build extension package
         run: >-
-          npx --yes web-ext@10.4.0 build
+          npx --yes web-ext@10.5.0 build
           --source-dir v3
           --artifacts-dir releases
           --filename always-active-plus-${{ steps.version.outputs.version }}.zip
@@ -104,7 +104,7 @@ jobs:
         run: |
           set +e
           output="$(
-            npx --yes web-ext@10.4.0 sign \
+            npx --yes web-ext@10.5.0 sign \
               --source-dir v3 \
               --artifacts-dir releases/amo \
               --channel listed \

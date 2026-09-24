@@ -47,8 +47,8 @@ package can be reproduced with:
 
 ```sh
 node --test test/*.test.js
-npx --yes web-ext@10.4.0 lint --source-dir v3
-npx --yes web-ext@10.4.0 build --source-dir v3
+npx --yes web-ext@10.5.0 lint --source-dir v3
+npx --yes web-ext@10.5.0 build --source-dir v3
 ```
 
 See Mozilla's [web-ext signing documentation](https://extensionworkshop.com/documentation/develop/getting-started-with-web-ext/#sign-and-submit-your-extension-for-publication)
