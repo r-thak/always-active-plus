@@ -56,7 +56,7 @@ const activate = () => {
 
   chrome.storage.local.get({
     enabled: true,
-    allSites: false,
+    allSites: true,
     hosts: []
   }, async prefs => {
     try {
@@ -117,7 +117,7 @@ activate.actions = [];
 
 /* action */
 chrome.action.onClicked.addListener(tab => chrome.storage.local.get({
-  allSites: false,
+  allSites: true,
   hosts: []
 }, async prefs => {
   if (tab.url?.startsWith('http')) {

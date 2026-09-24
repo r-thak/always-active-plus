@@ -2,3 +2,4 @@
 .amo-upload-uuid
 releases/
 web-ext-artifacts/
+dist/

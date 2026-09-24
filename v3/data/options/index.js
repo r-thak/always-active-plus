@@ -18,7 +18,7 @@ const updateHostMode = allSites => {
 document.getElementById('allSites').addEventListener('change', e => updateHostMode(e.target.checked));
 
 chrome.storage.local.get({
-  'allSites': false,
+  'allSites': true,
   'visibilityState': true,
   'hidden': true,
   'blur': true,

@@ -107,6 +107,17 @@ test('all-sites mode registers every URL with hostname exceptions', async () => 
   assert.deepEqual(normalize(isolated.excludeMatches), normalize(main.excludeMatches));
 });
 
+test('new installations register every URL by default', async () => {
+  const worker = loadWorker({});
+
+  worker.hooks.onStartup.listeners[0]();
+  await flush();
+
+  const [main, isolated] = worker.registrations.at(-1);
+  assert.deepEqual(normalize(main.matches), ['*://*/*']);
+  assert.deepEqual(normalize(isolated.matches), ['*://*/*']);
+});
+
 test('legacy wildcard storage enables all sites without reinterpreting old entries', async () => {
   const worker = loadWorker({
     allSites: false,
