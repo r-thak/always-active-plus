@@ -100,22 +100,44 @@ jobs:
         env:
           WEB_EXT_API_KEY: ${{ secrets.AMO_API_KEY }}
           WEB_EXT_API_SECRET: ${{ secrets.AMO_API_SECRET }}
-        run: >-
-          npx --yes web-ext@10.4.0 sign
-          --source-dir v3
-          --artifacts-dir releases/amo
-          --channel listed
-          --amo-metadata amo-metadata.json
-          --approval-timeout 0
-          --no-input
+        shell: bash
+        run: |
+          set +e
+          output="$(
+            npx --yes web-ext@10.4.0 sign \
+              --source-dir v3 \
+              --artifacts-dir releases/amo \
+              --channel listed \
+              --amo-metadata amo-metadata.json \
+              --approval-timeout 0 \
+              --no-input 2>&1
+          )"
+          status=$?
+          set -e
+
+          printf '%s\n' "$output"
+
+          if [[ $status -ne 0 ]]; then
+            if grep -Fq "already exists" <<<"$output"; then
+              echo "Add-on version is already uploaded; continuing."
+            else
+              exit $status
+            fi
+          fi
 
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME"
-          "releases/always-active-plus-${{ needs.build.outputs.version }}.zip#Extension package"
-          "releases/SHA256SUMS#SHA-256 checksums"
-          --verify-tag
-          --generate-notes
-          --title "Always Active Plus ${{ needs.build.outputs.version }}"
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "GitHub release $GITHUB_REF_NAME already exists; skipping creation."
+            exit 0
+          fi
+
+          gh release create "$GITHUB_REF_NAME" \
+            "releases/always-active-plus-${{ needs.build.outputs.version }}.zip#Extension package" \
+            "releases/SHA256SUMS#SHA-256 checksums" \
+            --verify-tag \
+            --generate-notes \
+            --title "Always Active Plus ${{ needs.build.outputs.version }}"
