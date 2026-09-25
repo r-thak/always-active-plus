@@ -113,6 +113,12 @@ const loadInjection = () => {
         this.type = type;
       }
     },
+    MouseEvent: class {
+      constructor(type, properties) {
+        this.type = type;
+        Object.assign(this, properties);
+      }
+    },
     console,
     Date,
     document,
@@ -224,6 +230,35 @@ test('hides the matching re-entry after a blocked overlay exit', () => {
   const laterEntry = createEvent('mouseover', {relatedTarget: null});
   window.dispatchEvent(laterEntry);
   assert.equal(laterEntry.defaultPrevented, undefined);
+});
+
+test('does not synthesize mouseenter events when re-entering after an overlay exit', () => {
+  const {document, window} = loadInjection();
+  const previousTarget = new Element();
+  const reentryTarget = new Element();
+  previousTarget.parentNode = document;
+  reentryTarget.parentNode = document;
+  document.elementFromPoint = x => x < 8 ? previousTarget : reentryTarget;
+
+  let mouseenterCount = 0;
+  reentryTarget.addEventListener('mouseenter', () => {
+    mouseenterCount += 1;
+  });
+
+  window.dispatchEvent(createEvent('mouseout', {
+    clientX: 0,
+    clientY: 0,
+    relatedTarget: null
+  }));
+  const reentry = createEvent('mouseenter', {
+    clientX: 16,
+    clientY: 0,
+    relatedTarget: null
+  });
+  window.dispatchEvent(reentry);
+
+  assert.equal(reentry.defaultPrevented, true);
+  assert.equal(mouseenterCount, 0);
 });
 
 test('blocks the pointer-event equivalents of an overlay exit', () => {

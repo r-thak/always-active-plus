@@ -207,81 +207,10 @@
     pointer: false
   };
 
-  let mouseExitPoint;
-  let replayingMousePath = false;
-  const replayMousePath = endEvent => {
-    const start = mouseExitPoint;
-    const end = {x: endEvent.clientX, y: endEvent.clientY};
-    mouseExitPoint = undefined;
-    if (!start || !Number.isFinite(start.x) || !Number.isFinite(start.y) ||
-        !Number.isFinite(end.x) || !Number.isFinite(end.y) ||
-        typeof document.elementFromPoint !== 'function' || typeof MouseEvent !== 'function') {
-      return;
-    }
-
-    const distance = Math.hypot(end.x - start.x, end.y - start.y);
-    const steps = Math.max(1, Math.ceil(distance / 8));
-    const ancestors = element => {
-      const result = [];
-      for (let node = element; node && node !== document; node = node.parentNode) {
-        if (node.dispatchEvent) result.push(node);
-      }
-      return result;
-    };
-    const fire = (target, type, x, y, relatedTarget) => {
-      if (!target || !target.dispatchEvent) return;
-      target.dispatchEvent(new MouseEvent(type, {
-        bubbles: type === 'mousemove' || type === 'mouseover' || type === 'mouseout',
-        cancelable: true,
-        clientX: x,
-        clientY: y,
-        relatedTarget: relatedTarget || null,
-        view: window
-      }));
-    };
-
-    replayingMousePath = true;
-    try {
-      let previousTarget;
-      let previousPath = [];
-      for (let i = 0; i <= steps; i += 1) {
-        const x = start.x + (end.x - start.x) * i / steps;
-        const y = start.y + (end.y - start.y) * i / steps;
-        const target = document.elementFromPoint(x, y);
-        if (!target) continue;
-        const path = ancestors(target);
-        let common = 0;
-        while (common < previousPath.length && common < path.length &&
-            previousPath[previousPath.length - 1 - common] === path[path.length - 1 - common]) {
-          common += 1;
-        }
-        if (previousTarget && previousTarget !== target) {
-          fire(previousTarget, 'mouseout', x, y, target);
-          for (let j = 0; j < previousPath.length - common; j += 1) {
-            fire(previousPath[j], 'mouseleave', x, y, target);
-          }
-          fire(target, 'mouseover', x, y, previousTarget);
-          for (let j = path.length - common - 1; j >= 0; j -= 1) {
-            fire(path[j], 'mouseenter', x, y, previousTarget);
-          }
-        }
-        fire(target, 'mousemove', x, y, null);
-        previousTarget = target;
-        previousPath = path;
-      }
-    }
-    finally {
-      replayingMousePath = false;
-    }
-  };
-
   const onleave = e => {
     if (port.dataset.enabled === 'true' && port.dataset.mouseleave !== 'false') {
       if (isPageExit(e)) {
         reentry[e.type.startsWith('pointer') ? 'pointer' : 'mouse'] = true;
-        if (e.type === 'mouseleave' || e.type === 'mouseout') {
-          mouseExitPoint = {x: e.clientX, y: e.clientY};
-        }
       }
       if (isPageExit(e) || e.target === document || e.target === window) {
         return block(e);
@@ -295,9 +224,6 @@
     if (port.dataset.enabled === 'true' && port.dataset.mouseout !== 'false') {
       if (isPageExit(e)) {
         reentry[e.type.startsWith('pointer') ? 'pointer' : 'mouse'] = true;
-        if (e.type === 'mouseout') {
-          mouseExitPoint = {x: e.clientX, y: e.clientY};
-        }
       }
       if (isPageExit(e) || e.target === document.documentElement || e.target === document.body) {
         return block(e);
@@ -315,9 +241,6 @@
       reentry[family] &&
       isPageExit(e)
     ) {
-      if (family === 'mouse' && !replayingMousePath) {
-        replayMousePath(e);
-      }
       return block(e);
     }
   };
@@ -339,7 +262,6 @@
   window.addEventListener('pointerover', onover, true);
 
   window.addEventListener('mousemove', () => {
-    if (!replayingMousePath) mouseExitPoint = undefined;
     reentry.mouse = false;
   }, true);
   window.addEventListener('pointermove', () => {
