@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "name": "Always Active Plus",
   "default_locale": "en",
   "description": "__MSG_description__",
@@ -12,7 +12,8 @@
     "*://*/*"
   ],
   "action": {
-    "default_title": "Toggle the current site in the inclusion or exception list, according to the site mode selected on the options page. The page reloads automatically after a change.",
+    "default_title": "Always Active Plus",
+    "default_popup": "data/popup/index.html",
     "default_icon": {
       "16": "data/icons/disabled/16.png",
       "32": "data/icons/disabled/32.png",

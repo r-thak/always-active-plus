@@ -207,6 +207,64 @@
     pointer: false
   };
 
+  let mouseExitPoint;
+  let mouseExitTarget;
+  const replayMouseLeaves = endEvent => {
+    const start = mouseExitPoint;
+    const end = {x: endEvent.clientX, y: endEvent.clientY};
+    const exitTarget = mouseExitTarget;
+    mouseExitPoint = undefined;
+    mouseExitTarget = undefined;
+    if (!start || !Number.isFinite(start.x) || !Number.isFinite(start.y) ||
+        !Number.isFinite(end.x) || !Number.isFinite(end.y) ||
+        typeof document.elementFromPoint !== 'function' || typeof MouseEvent !== 'function') {
+      return;
+    }
+
+    const steps = Math.max(1, Math.ceil(Math.hypot(end.x - start.x, end.y - start.y) / 8));
+    const ancestors = element => {
+      const result = [];
+      for (let node = element; node && node !== document; node = node.parentNode) {
+        if (node.dispatchEvent) result.push(node);
+      }
+      return result;
+    };
+    const fireLeave = (target, type, x, y, relatedTarget) => {
+      if (!target?.dispatchEvent) return;
+      target.dispatchEvent(new MouseEvent(type, {
+        bubbles: type === 'mouseout',
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+        relatedTarget: relatedTarget || null,
+        view: window
+      }));
+    };
+
+    let previousTarget = exitTarget;
+    let previousPath = exitTarget ? ancestors(exitTarget) : [];
+    for (let i = 0; i <= steps; i += 1) {
+      const x = start.x + (end.x - start.x) * i / steps;
+      const y = start.y + (end.y - start.y) * i / steps;
+      const target = document.elementFromPoint(x, y);
+      if (!target) continue;
+      const path = ancestors(target);
+      let common = 0;
+      while (common < previousPath.length && common < path.length &&
+          previousPath[previousPath.length - 1 - common] === path[path.length - 1 - common]) {
+        common += 1;
+      }
+      if (previousTarget && previousTarget !== target) {
+        fireLeave(previousTarget, 'mouseout', x, y, target);
+        for (let j = 0; j < previousPath.length - common; j += 1) {
+          fireLeave(previousPath[j], 'mouseleave', x, y, target);
+        }
+      }
+      previousTarget = target;
+      previousPath = path;
+    }
+  };
+
   const onleave = e => {
     if (port.dataset.enabled === 'true' && port.dataset.mouseleave !== 'false') {
       if (isPageExit(e)) {
@@ -224,6 +282,10 @@
     if (port.dataset.enabled === 'true' && port.dataset.mouseout !== 'false') {
       if (isPageExit(e)) {
         reentry[e.type.startsWith('pointer') ? 'pointer' : 'mouse'] = true;
+        if (e.type === 'mouseout') {
+          mouseExitPoint = {x: e.clientX, y: e.clientY};
+          mouseExitTarget = e.target;
+        }
       }
       if (isPageExit(e) || e.target === document.documentElement || e.target === document.body) {
         return block(e);
@@ -241,6 +303,9 @@
       reentry[family] &&
       isPageExit(e)
     ) {
+      if (family === 'mouse') {
+        replayMouseLeaves(e);
+      }
       return block(e);
     }
   };
@@ -262,6 +327,7 @@
   window.addEventListener('pointerover', onover, true);
 
   window.addEventListener('mousemove', () => {
+    mouseExitPoint = undefined;
     reentry.mouse = false;
   }, true);
   window.addEventListener('pointermove', () => {

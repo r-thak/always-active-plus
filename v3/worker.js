@@ -115,101 +115,97 @@ chrome.storage.onChanged.addListener(ps => {
 });
 activate.actions = [];
 
-/* action */
-chrome.action.onClicked.addListener(tab => chrome.storage.local.get({
+/* current-site control */
+const readSitePrefs = () => new Promise(resolve => chrome.storage.local.get({
+  enabled: true,
   allSites: true,
   hosts: []
-}, async prefs => {
-  if (tab.url?.startsWith('http')) {
-    const legacyAllSites = !prefs.allSites && prefs.hosts.includes('*');
-    const allSites = prefs.allSites || legacyAllSites;
-    const hosts = legacyAllSites ? [] : prefs.hosts.filter(host => host !== '*');
+}, resolve));
 
-    const a = await chrome.scripting.executeScript({
-      target: {
-        tabId: tab.id,
-        allFrames: true
-      },
-      func: () => location.hostname,
-      injectImmediately: true
-    }).catch(e => [{
-      result: new URL(tab.url).hostname,
-      frameId: 0
-    }]);
+const normalizeSitePrefs = prefs => {
+  const legacyAllSites = !prefs.allSites && prefs.hosts.includes('*');
+  return {
+    enabled: prefs.enabled,
+    allSites: prefs.allSites || legacyAllSites,
+    hosts: legacyAllSites ? [] : prefs.hosts.filter(host => host !== '*')
+  };
+};
 
-    const hostnames = (a || []).map(o => o.result).filter((s, i, l) => s && l.indexOf(s) === i);
-    const top = a.find(o => o.frameId === 0).result;
+const hostMatches = (host, rule) => {
+  if (rule.startsWith('*.')) {
+    const suffix = rule.slice(2);
+    return host === suffix || host.endsWith('.' + suffix);
+  }
+  return host === rule;
+};
 
-    if (top) {
-      const n = hosts.indexOf(top);
-      let message = '';
-      let badge = '✓';
-      if (allSites) {
-        // Listed hostnames are exceptions while all-sites mode is enabled.
-        if (n >= 0) {
-          message = 'Enabled the extension on the following hostnames by removing their exceptions:\n\n' + hostnames.join(', ') + '\n';
-          for (const hostname of hostnames) {
-            const index = hosts.indexOf(hostname);
-            if (index >= 0) {
-              hosts.splice(index, 1);
-            }
-          }
-        }
-        else {
-          message = 'Disabled the extension on the following hostnames by adding exceptions:\n\n' + hostnames.join(', ') + '\n';
-          badge = '×';
-          for (const hostname of hostnames) {
-            if (hosts.includes(hostname) === false) {
-              hosts.push(hostname);
-            }
-          }
-        }
-      }
-      else {
-        // Listed hostnames are inclusions in the default opt-in mode.
-        if (n >= 0) {
-          message = 'Removed the following hostnames:\n\n' + hostnames.join(', ') + '\n';
-          for (const hostname of hostnames) {
-            const index = hosts.indexOf(hostname);
-            if (index >= 0) {
-              hosts.splice(index, 1);
-            }
-          }
-        }
-        else {
-          message = 'Added the following hostnames:\n' + hostnames.join(', ') + '\n';
-          for (const hostname of hostnames) {
-            if (hosts.includes(hostname) === false) {
-              hosts.push(hostname);
-            }
-          }
-        }
-      }
-      validate(hosts).then(error => {
-        if (error) {
-          notify(tab.id, error);
-        }
-        else {
-          activate.actions.push(() => {
-            chrome.tabs.reload(tab.id);
-            setTimeout(() => notify(tab.id, message, badge), 5000);
-          });
-          chrome.storage.local.set({allSites, hosts});
-        }
+const getSiteState = async url => {
+  let host;
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return {available: false};
+    host = parsed.hostname;
+  }
+  catch (error) {
+    return {available: false};
+  }
+
+  const prefs = normalizeSitePrefs(await readSitePrefs());
+  const listed = prefs.hosts.some(rule => hostMatches(host, rule));
+  const active = prefs.enabled && (prefs.allSites ? !listed : listed);
+  return {
+    available: true,
+    enabled: active,
+    globallyEnabled: prefs.enabled,
+    host,
+    allSites: prefs.allSites,
+    ruleCount: prefs.hosts.length
+  };
+};
+
+const toggleSite = async (tabId, url) => {
+  const current = await getSiteState(url);
+  if (!current.available) return {ok: false, message: 'This page cannot be controlled.'};
+  if (!current.globallyEnabled) {
+    return {ok: false, message: 'The extension is paused globally.'};
+  }
+
+  const prefs = normalizeSitePrefs(await readSitePrefs());
+  const shouldAddHost = current.enabled === current.allSites;
+  const hosts = shouldAddHost ? [...prefs.hosts, current.host] :
+    prefs.hosts.filter(rule => !hostMatches(current.host, rule));
+
+  const error = await validate(hosts);
+  if (error) return {ok: false, message: error};
+
+  return new Promise(resolve => {
+    activate.actions.push(() => {
+      chrome.tabs.reload(tabId);
+      resolve({
+        ok: true,
+        enabled: !current.enabled,
+        host: current.host,
+        allSites: current.allSites,
+        ruleCount: hosts.length
       });
-    }
-    else {
-      notify(tab.id, 'Cannot find the hostname of this tab');
-    }
-  }
-  else {
-    notify(tab.id, 'Tab does not have a valid hostname');
-  }
-}));
+    });
+    chrome.storage.local.set({allSites: prefs.allSites, hosts});
+  });
+};
 
 /* messaging */
 chrome.runtime.onMessage.addListener((request, sender, response) => {
-  if (request.method === 'check') {
+  if (request.method === 'site-state') {
+    getSiteState(request.url).then(response).catch(() => response({available: false}));
+    return true;
+  }
+  else if (request.method === 'toggle-site') {
+    toggleSite(request.tabId, request.url)
+      .then(response)
+      .catch(error => response({ok: false, message: error.message}));
+    return true;
+  }
+  else if (request.method === 'check') {
     log('check event from', sender.tab);
   }
   else if (request.method === 'change') {

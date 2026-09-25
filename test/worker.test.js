@@ -21,12 +21,11 @@ const loadWorker = initialPrefs => {
   const onStartup = hook();
   const onInstalled = hook();
   const onChanged = hook();
-  const onClicked = hook();
   const onMessage = hook();
+  const reloadedTabs = [];
 
   const chrome = {
     action: {
-      onClicked,
       setBadgeText() {},
       setIcon() {},
       setTitle() {}
@@ -54,15 +53,22 @@ const loadWorker = initialPrefs => {
           callback({...defaults, ...prefs});
         },
         async set(values) {
+          const changes = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, {
+            oldValue: prefs[key],
+            newValue: value
+          }]));
           Object.assign(prefs, values);
           storageWrites.push(values);
+          for (const listener of onChanged.listeners) listener(changes, 'local');
         }
       },
       onChanged
     },
     tabs: {
       query: async () => [{id: 1}],
-      reload() {}
+      reload(tabId) {
+        reloadedTabs.push(tabId);
+      }
     },
     windows: {}
   };
@@ -81,10 +87,14 @@ const loadWorker = initialPrefs => {
   vm.runInContext(source, context);
 
   return {
-    hooks: {onChanged, onClicked, onStartup},
+    hooks: {onChanged, onMessage, onStartup},
     prefs,
     registrations,
-    storageWrites
+    storageWrites,
+    reloadedTabs,
+    message(request) {
+      return new Promise(resolve => onMessage.listeners[0](request, {}, resolve));
+    }
   };
 };
 
@@ -143,36 +153,57 @@ test('changing the all-sites preference refreshes registrations', async () => {
   assert.deepEqual(normalize(worker.registrations[0][0].matches), ['*://*/*']);
 });
 
-test('action clicks add and remove exceptions in all-sites mode', async () => {
+test('popup toggle adds and removes exceptions in all-sites mode', async () => {
   const worker = loadWorker({allSites: true, hosts: []});
-  const click = worker.hooks.onClicked.listeners[0];
+  const request = {method: 'toggle-site', tabId: 1, url: 'https://example.com/'};
 
-  click({id: 1, url: 'https://example.com/'});
-  await flush();
-  await flush();
+  assert.deepEqual(normalize(await worker.message(request)), {
+    ok: true,
+    enabled: false,
+    host: 'example.com',
+    allSites: true,
+    ruleCount: 1
+  });
   assert.deepEqual(normalize(worker.storageWrites.at(-1)), {
     allSites: true,
     hosts: ['example.com']
   });
+  assert.deepEqual(worker.reloadedTabs, [1]);
 
-  click({id: 1, url: 'https://example.com/'});
-  await flush();
-  await flush();
+  assert.equal((await worker.message(request)).enabled, true);
   assert.deepEqual(normalize(worker.storageWrites.at(-1)), {
     allSites: true,
     hosts: []
   });
 });
 
-test('first action click migrates legacy wildcard storage before adding an exception', async () => {
+test('popup reads current site state from the active mode and host rules', async () => {
+  const worker = loadWorker({
+    allSites: false,
+    enabled: true,
+    hosts: ['*.example.com']
+  });
+
+  assert.deepEqual(normalize(await worker.message({
+    method: 'site-state',
+    url: 'https://docs.example.com/article'
+  })), {
+    available: true,
+    enabled: true,
+    globallyEnabled: true,
+    host: 'docs.example.com',
+    allSites: false,
+    ruleCount: 1
+  });
+});
+
+test('popup toggle migrates legacy wildcard storage before adding an exception', async () => {
   const worker = loadWorker({
     allSites: false,
     hosts: ['*', 'old-redundant-entry.test']
   });
 
-  worker.hooks.onClicked.listeners[0]({id: 1, url: 'https://example.com/'});
-  await flush();
-  await flush();
+  await worker.message({method: 'toggle-site', tabId: 1, url: 'https://example.com/'});
 
   assert.deepEqual(normalize(worker.storageWrites.at(-1)), {
     allSites: true,

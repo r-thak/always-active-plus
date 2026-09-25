@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Always Active Plus</title>
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+  <main class="panel" aria-labelledby="title">
+    <header class="topbar">
+      <span class="brand-mark" aria-hidden="true">A<span>+</span></span>
+      <div class="brand-copy">
+        <p class="eyebrow">ALWAYS ACTIVE <span>PLUS</span></p>
+        <h1 id="title">Site control</h1>
+      </div>
+      <span class="live-dot" id="live-dot" aria-hidden="true"></span>
+    </header>
+
+    <section class="site-card" aria-live="polite">
+      <div class="site-symbol" aria-hidden="true">↗</div>
+      <div class="site-copy">
+        <p class="eyebrow">CURRENT SITE</p>
+        <p class="hostname" id="hostname">Looking up this tab…</p>
+      </div>
+      <span class="scope" id="scope">—</span>
+    </section>
+
+    <section class="control" aria-labelledby="status">
+      <button class="power" id="power" type="button" disabled aria-pressed="false">
+        <span class="power-halo" aria-hidden="true"></span>
+        <svg class="power-icon" viewBox="0 0 48 48" aria-hidden="true">
+          <path d="M24 5v18M13.2 11.9a18 18 0 1 0 21.6 0" />
+        </svg>
+        <span class="sr-only" id="button-label">Toggle protection for this site</span>
+      </button>
+      <p class="status" id="status" role="status">Checking this site</p>
+      <p class="hint" id="hint">This change applies after the page reloads.</p>
+    </section>
+
+    <footer class="footer">
+      <p id="mode-summary">—</p>
+      <button class="settings" id="settings" type="button">
+        <span>Settings</span><span aria-hidden="true">↗</span>
+      </button>
+    </footer>
+    <p class="error" id="error" role="alert" hidden></p>
+  </main>
+  <script src="index.js"></script>
+</body>
+</html>
