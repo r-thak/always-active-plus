@@ -234,21 +234,19 @@ test('hides the matching re-entry after a blocked overlay exit', () => {
 
 test('does not synthesize mouseenter events when re-entering after an overlay exit', () => {
   const {document, window} = loadInjection();
-  const previousTarget = new Element();
-  const reentryTarget = new Element();
-  previousTarget.parentNode = document;
-  reentryTarget.parentNode = document;
-  document.elementFromPoint = x => x < 8 ? previousTarget : reentryTarget;
+  const target = new Element();
+  target.parentNode = document;
+  document.elementFromPoint = () => target;
 
   let mouseenterCount = 0;
-  reentryTarget.addEventListener('mouseenter', () => {
+  target.addEventListener('mouseenter', () => {
     mouseenterCount += 1;
   });
 
   window.dispatchEvent(createEvent('mouseout', {
     clientX: 0,
     clientY: 0,
-    target: previousTarget,
+    target,
     relatedTarget: null
   }));
   const reentry = createEvent('mouseenter', {
@@ -262,19 +260,25 @@ test('does not synthesize mouseenter events when re-entering after an overlay ex
   assert.equal(mouseenterCount, 0);
 });
 
-test('replays mouseleave transitions along the exit-to-entry element path', () => {
+test('replays mouseleave and mouseenter transitions along the exit-to-entry path', () => {
   const {document, window} = loadInjection();
   const a = new Element();
   const b = new Element();
   const c = new Element();
+  const d = new Element();
+  const e = new Element();
   a.parentNode = document;
   b.parentNode = a;
   c.parentNode = b;
-  document.elementFromPoint = x => x < 8 ? c : a;
+  e.parentNode = a;
+  d.parentNode = e;
+  document.elementFromPoint = x => x < 8 ? c : d;
 
-  const left = [];
-  b.addEventListener('mouseleave', () => left.push('B'));
-  c.addEventListener('mouseleave', () => left.push('C'));
+  const transitions = [];
+  b.addEventListener('mouseleave', () => transitions.push('leave B'));
+  c.addEventListener('mouseleave', () => transitions.push('leave C'));
+  e.addEventListener('mouseenter', () => transitions.push('enter E'));
+  d.addEventListener('mouseenter', () => transitions.push('enter D'));
 
   window.dispatchEvent(createEvent('mouseout', {
     clientX: 0,
@@ -288,7 +292,7 @@ test('replays mouseleave transitions along the exit-to-entry element path', () =
     relatedTarget: null
   }));
 
-  assert.deepEqual(left, ['C', 'B']);
+  assert.deepEqual(transitions, ['leave C', 'leave B', 'enter E', 'enter D']);
 });
 
 test('blocks the pointer-event equivalents of an overlay exit', () => {

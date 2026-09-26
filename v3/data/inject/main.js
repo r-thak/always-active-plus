@@ -209,7 +209,7 @@
 
   let mouseExitPoint;
   let mouseExitTarget;
-  const replayMouseLeaves = endEvent => {
+  const replayMousePath = endEvent => {
     const start = mouseExitPoint;
     const end = {x: endEvent.clientX, y: endEvent.clientY};
     const exitTarget = mouseExitTarget;
@@ -221,7 +221,7 @@
       return;
     }
 
-    const steps = Math.max(1, Math.ceil(Math.hypot(end.x - start.x, end.y - start.y) / 8));
+    const steps = Math.max(1, Math.ceil(Math.hypot(end.x - start.x, end.y - start.y)));
     const ancestors = element => {
       const result = [];
       for (let node = element; node && node !== document; node = node.parentNode) {
@@ -229,10 +229,10 @@
       }
       return result;
     };
-    const fireLeave = (target, type, x, y, relatedTarget) => {
+    const fire = (target, type, x, y, relatedTarget) => {
       if (!target?.dispatchEvent) return;
       target.dispatchEvent(new MouseEvent(type, {
-        bubbles: type === 'mouseout',
+        bubbles: type === 'mouseout' || type === 'mouseover',
         cancelable: true,
         clientX: x,
         clientY: y,
@@ -255,9 +255,13 @@
         common += 1;
       }
       if (previousTarget && previousTarget !== target) {
-        fireLeave(previousTarget, 'mouseout', x, y, target);
+        fire(previousTarget, 'mouseout', x, y, target);
         for (let j = 0; j < previousPath.length - common; j += 1) {
-          fireLeave(previousPath[j], 'mouseleave', x, y, target);
+          fire(previousPath[j], 'mouseleave', x, y, target);
+        }
+        fire(target, 'mouseover', x, y, previousTarget);
+        for (let j = path.length - common - 1; j >= 0; j -= 1) {
+          fire(path[j], 'mouseenter', x, y, previousTarget);
         }
       }
       previousTarget = target;
@@ -304,7 +308,7 @@
       isPageExit(e)
     ) {
       if (family === 'mouse') {
-        replayMouseLeaves(e);
+        replayMousePath(e);
       }
       return block(e);
     }
