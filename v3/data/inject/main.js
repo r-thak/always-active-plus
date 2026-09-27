@@ -281,41 +281,43 @@
       stopMousePath();
       return;
     }
+    const now = Date.now();
+    if (now - path.started >= 1500 || now - path.lastTick >= 100) {
+      moveMousePath(path, path.destination, true);
+      stopMousePath();
+      reentry.mouse = false;
+      return;
+    }
+    path.lastTick = now;
     const dx = path.destination.x - path.position.x;
     const dy = path.destination.y - path.position.y;
     const remaining = Math.hypot(dx, dy);
-    if (remaining <= 1) {
+    if (remaining <= 0.75 && Math.hypot(path.velocity.x, path.velocity.y) <= 0.75) {
       moveMousePath(path, path.destination, true);
       stopMousePath();
       reentry.mouse = false;
       return;
     }
 
-    const startFactor = 1 - mouseSetting('mouseStartSmoothness') / 100 *
-      (1 - Math.min(1, path.traveled / 60));
-    const stopFactor = 1 - mouseSetting('mouseStopSmoothness') / 100 *
-      (1 - Math.min(1, remaining / 60));
-    const distance = Math.min(remaining, Math.max(1,
-      16 / (0.25 + mouseSetting('mouseInterpolation') * 0.1) *
-      Math.max(0.05, startFactor) * Math.max(0.05, stopFactor)));
-    const desiredX = dx / remaining;
-    const desiredY = dy / remaining;
-    const directionX = path.direction.x * 0.65 + desiredX * 0.35;
-    const directionY = path.direction.y * 0.65 + desiredY * 0.35;
-    const length = Math.hypot(directionX, directionY) || 1;
-    path.direction = {x: directionX / length, y: directionY / length};
-    const end = distance >= remaining ? path.destination : {
-      x: path.position.x + path.direction.x * distance,
-      y: path.position.y + path.direction.y * distance
+    // Follow the latest position like a drawing-app stabilizer. The low-pass
+    // position filter handles distance; retained velocity rounds off turns.
+    const interpolation = mouseSetting('mouseInterpolation') / 100;
+    const alpha = 1 - Math.exp(-16 / (12 + interpolation * 140));
+    const ease = value => value * value * (3 - 2 * value);
+    const startFactor = 1 - mouseSetting('mouseStartSmoothness') / 125 *
+      (1 - ease(Math.min(1, (now - path.started) / 120)));
+    const stopFactor = 1 - mouseSetting('mouseStopSmoothness') / 125 *
+      (1 - ease(Math.min(1, remaining / 80)));
+    const blend = 0.65 - interpolation * 0.2;
+    path.velocity.x = path.velocity.x * (1 - blend) + dx * alpha * startFactor * stopFactor * blend;
+    path.velocity.y = path.velocity.y * (1 - blend) + dy * alpha * startFactor * stopFactor * blend;
+    const end = {
+      x: path.position.x + path.velocity.x,
+      y: path.position.y + path.velocity.y
     };
-    path.traveled += Math.hypot(end.x - path.position.x, end.y - path.position.y);
     moveMousePath(path, end, true);
     if (mousePath === path) {
-      if (end === path.destination) {
-        stopMousePath();
-        reentry.mouse = false;
-      }
-      else path.timer = setTimeout(tickMousePath, 16);
+      path.timer = setTimeout(tickMousePath, 16);
     }
   };
   const replayMousePath = endEvent => {
@@ -336,8 +338,9 @@
       destination: end,
       target: exitTarget,
       ancestors: exitTarget ? ancestors(exitTarget) : [],
-      direction: {x: 0, y: 0},
-      traveled: 0
+      velocity: {x: 0, y: 0},
+      started: Date.now(),
+      lastTick: Date.now()
     };
     if (mouseSetting('mouseInterpolation') === 0) {
       moveMousePath(path, end, false);
@@ -351,6 +354,7 @@
   const onleave = e => {
     if (port.dataset.enabled === 'true' && port.dataset.mouseleave !== 'false') {
       if (isPageExit(e)) {
+        stopMousePath();
         reentry[e.type.startsWith('pointer') ? 'pointer' : 'mouse'] = true;
       }
       if (isPageExit(e) || e.target === document || e.target === window) {
@@ -364,6 +368,7 @@
   const onout = e => {
     if (port.dataset.enabled === 'true' && port.dataset.mouseout !== 'false') {
       if (isPageExit(e)) {
+        stopMousePath();
         reentry[e.type.startsWith('pointer') ? 'pointer' : 'mouse'] = true;
         if (e.type === 'mouseout') {
           mouseExitPoint = {x: e.clientX, y: e.clientY};
@@ -412,6 +417,12 @@
   window.addEventListener('mousemove', e => {
     if (syntheticMouseMove) return;
     if (mousePath) {
+      if (Date.now() - mousePath.lastTick >= 100 ||
+          Date.now() - mousePath.started >= 1500) {
+        stopMousePath();
+        reentry.mouse = false;
+        return;
+      }
       if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
         mousePath.destination = {x: e.clientX, y: e.clientY};
       }
@@ -421,7 +432,12 @@
     reentry.mouse = false;
   }, true);
   window.addEventListener('pointermove', e => {
-    if (mousePath && (e.pointerType === 'mouse' || !e.pointerType)) return block(e);
+    if (mousePath && (e.pointerType === 'mouse' || !e.pointerType)) {
+      if (Date.now() - mousePath.lastTick < 100 &&
+          Date.now() - mousePath.started < 1500) return block(e);
+      stopMousePath();
+      reentry.mouse = false;
+    }
     reentry.pointer = false;
   }, true);
   const snapMousePath = e => {

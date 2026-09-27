@@ -107,6 +107,7 @@ const loadInjection = ({fakeTimers = false} = {}) => {
   window.cancelAnimationFrame = () => {};
   const timers = new Map();
   let nextTimer = 0;
+  let now = 0;
   const schedule = fakeTimers ? callback => {
     const id = ++nextTimer;
     timers.set(id, callback);
@@ -117,6 +118,7 @@ const loadInjection = ({fakeTimers = false} = {}) => {
     const [id, callback] = timers.entries().next().value || [];
     if (!callback) return false;
     timers.delete(id);
+    now += 16;
     callback();
     return true;
   };
@@ -135,7 +137,9 @@ const loadInjection = ({fakeTimers = false} = {}) => {
       }
     },
     console,
-    Date,
+    Date: fakeTimers ? class {
+      static now() { return now; }
+    } : Date,
     document,
     navigation: undefined,
     performance: {now: () => 0},
@@ -158,7 +162,7 @@ const loadInjection = ({fakeTimers = false} = {}) => {
     mouseout: 'true'
   });
 
-  return {document, port, window, tick, timers};
+  return {document, port, window, tick, timers, advance: milliseconds => now += milliseconds};
 };
 
 test('blocks a mouse exit from an inner element when relatedTarget is null', () => {
@@ -398,6 +402,93 @@ test('interpolation visits narrow targets and smoothness reduces initial speed',
   const smooth = run(80);
   assert.deepEqual(normal.entered, ['narrow', 'last']);
   assert.ok(smooth.firstMove < normal.firstMove);
+});
+
+test('stalled timers release native moves without a click', () => {
+  const {document, port, window, timers, advance} = loadInjection({fakeTimers: true});
+  port.dataset.mouseInterpolation = '100';
+  const target = new Element();
+  target.parentNode = document;
+  document.elementFromPoint = () => target;
+  window.dispatchEvent(createEvent('mouseout', {
+    clientX: 0, clientY: 0, target, relatedTarget: null
+  }));
+  window.dispatchEvent(createEvent('mouseenter', {
+    clientX: 500, clientY: 0, relatedTarget: null
+  }));
+  advance(120);
+  const move = createEvent('mousemove', {clientX: 510, clientY: 0});
+  window.dispatchEvent(move);
+  assert.equal(move.immediatePropagationStopped, undefined);
+  assert.equal(timers.size, 0);
+});
+
+test('continuous movement is released after the catch-up limit', () => {
+  const {document, port, window, tick, timers} = loadInjection({fakeTimers: true});
+  port.dataset.mouseInterpolation = '100';
+  const target = new Element();
+  target.parentNode = document;
+  document.elementFromPoint = () => target;
+  window.dispatchEvent(createEvent('mouseout', {
+    clientX: 0, clientY: 0, target, relatedTarget: null
+  }));
+  window.dispatchEvent(createEvent('mouseenter', {
+    clientX: 500, clientY: 0, relatedTarget: null
+  }));
+  for (let i = 0; i < 100 && timers.size; i += 1) {
+    window.dispatchEvent(createEvent('mousemove', {clientX: 500 + i * 10, clientY: 0}));
+    tick();
+  }
+  assert.equal(timers.size, 0);
+  const move = createEvent('mousemove', {clientX: 1600, clientY: 0});
+  window.dispatchEvent(move);
+  assert.equal(move.immediatePropagationStopped, undefined);
+});
+
+test('stop smoothness eases approach to the destination', () => {
+  const positionAfterTicks = stopSmoothness => {
+    const {document, port, window, tick} = loadInjection({fakeTimers: true});
+    port.dataset.mouseInterpolation = '20';
+    port.dataset.mouseStopSmoothness = String(stopSmoothness);
+    const target = new Element();
+    target.parentNode = document;
+    document.elementFromPoint = () => target;
+    const moves = [];
+    target.addEventListener('mousemove', e => moves.push(e.clientX));
+    window.dispatchEvent(createEvent('mouseout', {
+      clientX: 0, clientY: 0, target, relatedTarget: null
+    }));
+    window.dispatchEvent(createEvent('mouseenter', {
+      clientX: 30, clientY: 0, relatedTarget: null
+    }));
+    for (let i = 0; i < 5; i += 1) tick();
+    return moves.at(-1);
+  };
+  assert.ok(positionAfterTicks(100) < positionAfterTicks(0));
+});
+
+test('higher interpolation carries more motion through a turn', () => {
+  const turnRatio = interpolation => {
+    const {document, port, window, tick} = loadInjection({fakeTimers: true});
+    port.dataset.mouseInterpolation = String(interpolation);
+    const target = new Element();
+    target.parentNode = document;
+    document.elementFromPoint = () => target;
+    const moves = [];
+    target.addEventListener('mousemove', e => moves.push([e.clientX, e.clientY]));
+    window.dispatchEvent(createEvent('mouseout', {
+      clientX: 0, clientY: 0, target, relatedTarget: null
+    }));
+    window.dispatchEvent(createEvent('mouseenter', {
+      clientX: 100, clientY: 0, relatedTarget: null
+    }));
+    tick();
+    tick();
+    window.dispatchEvent(createEvent('mousemove', {clientX: 100, clientY: 100}));
+    tick();
+    return (moves[2][1] - moves[1][1]) / (moves[2][0] - moves[1][0]);
+  };
+  assert.ok(turnRatio(80) < turnRatio(10));
 });
 
 test('blocks the pointer-event equivalents of an overlay exit', () => {

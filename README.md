@@ -4,7 +4,7 @@ This extension protects against web pages tracking the activity state of the pag
 
 It also suppresses DOM event paths that can expose a transition to another app: focus/blur and focus-boundary events, visibility changes, page hiding, pointer capture loss, and mouse/pointer boundary events caused by moving onto an external overlay. Configure keyboard events to block from the options page using a `KeyboardEvent.key`, `KeyboardEvent.code`, or numeric `keyCode` value; `AltGraph` is blocked by default. A hostname policy can opt out with `"keyboard"`, `"mouseleave"`, or `"mouseout"`.
 
-The options page has mouse re-entry controls. Interpolation at 0 preserves immediate boundary replay; higher values generate slower mouse moves toward the latest cursor position. Start and stop smoothness slow the generated movement near each end. A mouse click ends the interpolation and moves the generated cursor position to the click.
+The options page has mouse re-entry controls. Interpolation at 0 preserves immediate boundary replay; higher values stabilize generated mouse movement toward the latest cursor position, including curved turns. Start and stop smoothness ease the movement near each end. The defaults are 35 interpolation, 30 start smoothness, and 35 stop smoothness. A mouse click ends interpolation and moves the generated cursor position to the click. Native mouse movement resumes when the generated cursor catches up or after a short safety limit.
 
 By default, the extension is enabled on all sites. The options page can switch to
 an opt-in hostname list; in all-sites mode, the hostname list is a set of

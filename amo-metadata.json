@@ -3,7 +3,7 @@
     "en-US": "Keep selected tabs active and control the browser events pages use to detect inactivity."
   },
   "description": {
-    "en-US": "Always Active Plus keeps pages active by controlling the visibility, focus, mouse, pointer, and configurable keyboard events exposed to those pages. It runs on all sites by default; the hostname list provides exceptions. An optional included-sites mode runs only on listed hostnames. Mouse re-entry movement can be interpolated with adjustable speed and start and stop smoothness. Settings remain in local extension storage, and the extension does not collect or transmit user data."
+    "en-US": "Always Active Plus keeps pages active by controlling the visibility, focus, mouse, pointer, and configurable keyboard events exposed to those pages. It is active on all sites by default; the hostname list provides exceptions. An optional included-sites mode runs only on listed hostnames. Mouse re-entry movement is smoothed by default, with adjustable interpolation and start and stop smoothness. Settings remain in local extension storage, and the extension does not collect or transmit user data."
   },
   "categories": [
     "privacy-security",

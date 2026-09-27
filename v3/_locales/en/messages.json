@@ -1,5 +1,5 @@
 {
   "description": {
-    "message": "Keep selected tabs active by controlling visibility, focus, pointer-boundary, and configurable keyboard events."
+    "message": "Keep pages active on all sites by default, with controls for visibility, focus, mouse movement, and keyboard events."
   }
 }

@@ -37,9 +37,9 @@ chrome.storage.local.get({
   'mouseout': true,
   'keyboard': true,
   'blockedKeys': ['AltGraph'],
-  'mouseInterpolation': 0,
-  'mouseStartSmoothness': 0,
-  'mouseStopSmoothness': 0,
+  'mouseInterpolation': 35,
+  'mouseStartSmoothness': 30,
+  'mouseStopSmoothness': 35,
   'log': false,
   'policies': null,
   'hosts': []
