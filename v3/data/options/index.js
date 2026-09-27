@@ -15,6 +15,13 @@ const updateHostMode = allSites => {
     'Included hostnames, separated by commas. Example:\n\nexample.com, *.example.com, www.example.com';
 };
 
+for (const id of ['mouseInterpolation', 'mouseStartSmoothness', 'mouseStopSmoothness']) {
+  const slider = document.getElementById(id);
+  const output = document.getElementById(id + 'Value');
+  slider.addEventListener('input', () => output.value = slider.value);
+  output.value = slider.value;
+}
+
 document.getElementById('allSites').addEventListener('change', e => updateHostMode(e.target.checked));
 
 chrome.storage.local.get({
@@ -30,6 +37,9 @@ chrome.storage.local.get({
   'mouseout': true,
   'keyboard': true,
   'blockedKeys': ['AltGraph'],
+  'mouseInterpolation': 0,
+  'mouseStartSmoothness': 0,
+  'mouseStopSmoothness': 0,
   'log': false,
   'policies': null,
   'hosts': []
@@ -48,6 +58,11 @@ chrome.storage.local.get({
   document.getElementById('mouseout').checked = prefs.mouseout;
   document.getElementById('keyboard').checked = prefs.keyboard;
   document.getElementById('blockedKeys').value = (Array.isArray(prefs.blockedKeys) ? prefs.blockedKeys : []).join(', ');
+  for (const id of ['mouseInterpolation', 'mouseStartSmoothness', 'mouseStopSmoothness']) {
+    const slider = document.getElementById(id);
+    slider.value = prefs[id];
+    document.getElementById(id + 'Value').value = slider.value;
+  }
   document.getElementById('log').checked = prefs.log;
   document.getElementById('policies').value = prefs.policies ? JSON.stringify(prefs.policies, null, '  ') : '';
   document.getElementById('hosts').value = legacyAllSites ? '' :
@@ -74,6 +89,9 @@ document.getElementById('save').addEventListener('click', async () => {
       .split(/[\n,]+/)
       .map(key => key.trim())
       .filter(Boolean))],
+    'mouseInterpolation': Number(document.getElementById('mouseInterpolation').value),
+    'mouseStartSmoothness': Number(document.getElementById('mouseStartSmoothness').value),
+    'mouseStopSmoothness': Number(document.getElementById('mouseStopSmoothness').value),
     'visibility': document.getElementById('visibility').checked,
     'pointercapture': document.getElementById('pointercapture').checked,
     'focus': document.getElementById('focus').checked,

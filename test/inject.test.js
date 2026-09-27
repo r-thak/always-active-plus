@@ -94,7 +94,7 @@ const createEvent = (type, props = {}) => ({
   ...props
 });
 
-const loadInjection = () => {
+const loadInjection = ({fakeTimers = false} = {}) => {
   // Each browser document has its own realm. Restore the test double so an
   // earlier injection cannot become this injection's apparent native getter.
   for (const [name, descriptor] of Object.entries(nativeDocumentDescriptors)) {
@@ -105,6 +105,21 @@ const loadInjection = () => {
   window.top = window;
   window.requestAnimationFrame = callback => callback(0);
   window.cancelAnimationFrame = () => {};
+  const timers = new Map();
+  let nextTimer = 0;
+  const schedule = fakeTimers ? callback => {
+    const id = ++nextTimer;
+    timers.set(id, callback);
+    return id;
+  } : setTimeout;
+  const cancel = fakeTimers ? id => timers.delete(id) : clearTimeout;
+  const tick = () => {
+    const [id, callback] = timers.entries().next().value || [];
+    if (!callback) return false;
+    timers.delete(id);
+    callback();
+    return true;
+  };
 
   const context = vm.createContext({
     Document,
@@ -124,8 +139,8 @@ const loadInjection = () => {
     document,
     navigation: undefined,
     performance: {now: () => 0},
-    setTimeout,
-    clearTimeout,
+    setTimeout: schedule,
+    clearTimeout: cancel,
     window
   });
   const source = fs.readFileSync(
@@ -143,7 +158,7 @@ const loadInjection = () => {
     mouseout: 'true'
   });
 
-  return {document, port, window};
+  return {document, port, window, tick, timers};
 };
 
 test('blocks a mouse exit from an inner element when relatedTarget is null', () => {
@@ -293,6 +308,96 @@ test('replays mouseleave and mouseenter transitions along the exit-to-entry path
   }));
 
   assert.deepEqual(transitions, ['leave C', 'leave B', 'enter E', 'enter D']);
+});
+
+test('interpolates moves toward the latest cursor position and bends around a turn', () => {
+  const {document, port, window, tick, timers} = loadInjection({fakeTimers: true});
+  port.dataset.mouseInterpolation = '20';
+  const target = new Element();
+  target.parentNode = document;
+  document.elementFromPoint = () => target;
+  const moves = [];
+  target.addEventListener('mousemove', e => moves.push([e.clientX, e.clientY]));
+
+  window.dispatchEvent(createEvent('mouseout', {
+    clientX: 0, clientY: 0, target, relatedTarget: null
+  }));
+  window.dispatchEvent(createEvent('mouseenter', {
+    clientX: 100, clientY: 0, relatedTarget: null
+  }));
+  assert.equal(moves.length, 0);
+  tick();
+  const turn = createEvent('mousemove', {clientX: 100, clientY: 100});
+  window.dispatchEvent(turn);
+  assert.equal(turn.immediatePropagationStopped, true);
+  tick();
+  assert.ok(moves[1][0] > moves[0][0]);
+  assert.ok(moves[1][1] > 0);
+  assert.ok(moves[1][1] < moves[1][0]);
+  for (let i = 0; i < 500 && timers.size; i += 1) tick();
+  assert.ok(Math.abs(moves.at(-1)[0] - 100) <= 1);
+  assert.ok(Math.abs(moves.at(-1)[1] - 100) <= 1);
+  assert.equal(timers.size, 0);
+});
+
+test('click snaps to its position and cancels pending interpolation', () => {
+  const {document, port, window, tick, timers} = loadInjection({fakeTimers: true});
+  port.dataset.mouseInterpolation = '50';
+  const target = new Element();
+  target.parentNode = document;
+  document.elementFromPoint = () => target;
+  const moves = [];
+  target.addEventListener('mousemove', e => moves.push([e.clientX, e.clientY]));
+  window.dispatchEvent(createEvent('mouseout', {
+    clientX: 0, clientY: 0, target, relatedTarget: null
+  }));
+  window.dispatchEvent(createEvent('mouseenter', {
+    clientX: 80, clientY: 0, relatedTarget: null
+  }));
+  tick();
+  window.dispatchEvent(createEvent('pointerdown', {
+    pointerType: 'mouse', clientX: 20, clientY: 30
+  }));
+  assert.deepEqual(moves.at(-1), [20, 30]);
+  assert.equal(timers.size, 0);
+  const count = moves.length;
+  assert.equal(tick(), false);
+  assert.equal(moves.length, count);
+  const ordinaryMove = createEvent('mousemove', {clientX: 21, clientY: 31});
+  window.dispatchEvent(ordinaryMove);
+  assert.equal(ordinaryMove.immediatePropagationStopped, undefined);
+});
+
+test('interpolation visits narrow targets and smoothness reduces initial speed', () => {
+  const run = smoothness => {
+    const {document, port, window, tick} = loadInjection({fakeTimers: true});
+    port.dataset.mouseInterpolation = '10';
+    port.dataset.mouseStartSmoothness = String(smoothness);
+    const first = new Element();
+    const narrow = new Element();
+    const last = new Element();
+    for (const element of [first, narrow, last]) element.parentNode = document;
+    document.elementFromPoint = x => x < 2 ? first : x < 3 ? narrow : last;
+    const entered = [];
+    const moves = [];
+    narrow.addEventListener('mouseenter', () => entered.push('narrow'));
+    last.addEventListener('mouseenter', () => entered.push('last'));
+    for (const element of [first, narrow, last]) {
+      element.addEventListener('mousemove', e => moves.push(e.clientX));
+    }
+    window.dispatchEvent(createEvent('mouseout', {
+      clientX: 0, clientY: 0, target: first, relatedTarget: null
+    }));
+    window.dispatchEvent(createEvent('mouseenter', {
+      clientX: 40, clientY: 0, relatedTarget: null
+    }));
+    tick();
+    return {entered, firstMove: moves[0]};
+  };
+  const normal = run(0);
+  const smooth = run(80);
+  assert.deepEqual(normal.entered, ['narrow', 'last']);
+  assert.ok(smooth.firstMove < normal.firstMove);
 });
 
 test('blocks the pointer-event equivalents of an overlay exit', () => {

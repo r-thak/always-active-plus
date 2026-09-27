@@ -53,6 +53,9 @@ hr {
   grid-gap: 10px;
   align-items: center;
 }
+.grid input[type=range] {
+  width: 12rem;
+}
 .disabled * {
   opacity: 0.4;
   pointer-events: none;

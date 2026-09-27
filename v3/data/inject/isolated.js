@@ -32,6 +32,9 @@ const update = () => chrome.storage.local.get({
   'mouseout': true,
   'keyboard': true,
   'blockedKeys': ['AltGraph'],
+  'mouseInterpolation': 0,
+  'mouseStartSmoothness': 0,
+  'mouseStopSmoothness': 0,
   'visibility': true,
   'pointercapture': true,
   'policies': null
@@ -56,6 +59,9 @@ const update = () => chrome.storage.local.get({
     .map(key => String(key).trim().toLowerCase())
     .filter(Boolean)
     .join('\n');
+  for (const id of ['mouseInterpolation', 'mouseStartSmoothness', 'mouseStopSmoothness']) {
+    port.dataset[id] = Math.max(0, Math.min(100, Number(prefs[id]) || 0));
+  }
   port.dataset.visibility = policy.includes('visibility') ? false : prefs.visibility;
   port.dataset.pointercapture = policy.includes('pointercapture') ? false : prefs.pointercapture;
 });

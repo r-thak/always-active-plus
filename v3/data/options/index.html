@@ -36,6 +36,16 @@
     <label for="log">Display logs (for debugging purpose only)</label>
     <input type="checkbox" id="log">
   </div>
+  <h1>Mouse movement on re-entry</h1>
+  <p>Interpolation 0 uses the current immediate boundary replay. Higher values move more slowly. Start and stop smoothness slow movement near the ends of the path.</p>
+  <div class="grid">
+    <label for="mouseInterpolation">Interpolation: <output id="mouseInterpolationValue"></output></label>
+    <input type="range" id="mouseInterpolation" min="0" max="100" value="0">
+    <label for="mouseStartSmoothness">Start smoothness: <output id="mouseStartSmoothnessValue"></output></label>
+    <input type="range" id="mouseStartSmoothness" min="0" max="100" value="0">
+    <label for="mouseStopSmoothness">Stop smoothness: <output id="mouseStopSmoothnessValue"></output></label>
+    <input type="range" id="mouseStopSmoothness" min="0" max="100" value="0">
+  </div>
   <h1>Blocked Keyboard Events</h1>
   <p>Comma-separated <code>KeyboardEvent.key</code>, <code>KeyboardEvent.code</code>, or numeric <code>keyCode</code> values.</p>
   <input type="text" id="blockedKeys" placeholder="AltGraph, AltRight, 225">
