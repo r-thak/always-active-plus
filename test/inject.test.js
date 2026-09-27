@@ -29,7 +29,12 @@ class EventTarget {
 class Element extends EventTarget {
   constructor() {
     super();
-    this.dataset = {};
+    this.dataset = new Proxy({}, {
+      set(target, key, value) {
+        target[key] = String(value);
+        return true;
+      }
+    });
   }
 
   append(element) {
@@ -49,8 +54,8 @@ class Document extends EventTarget {
     return new Element();
   }
 
-  getElementById() {
-    return null;
+  getElementById(id) {
+    return this.documentElement.child?.id === id ? this.documentElement.child : null;
   }
 
   hasFocus() {
@@ -94,7 +99,7 @@ const createEvent = (type, props = {}) => ({
   ...props
 });
 
-const loadInjection = ({fakeTimers = false} = {}) => {
+const loadInjection = ({fakeTimers = false, loadIsolated = false} = {}) => {
   // Each browser document has its own realm. Restore the test double so an
   // earlier injection cannot become this injection's apparent native getter.
   for (const [name, descriptor] of Object.entries(nativeDocumentDescriptors)) {
@@ -161,6 +166,21 @@ const loadInjection = ({fakeTimers = false} = {}) => {
     mouseleave: 'true',
     mouseout: 'true'
   });
+
+  if (loadIsolated) {
+    context.location = {hostname: 'test.invalid'};
+    context.parent = {location: {hostname: 'test.invalid'}};
+    context.chrome = {
+      storage: {
+        local: {get: (defaults, callback) => callback(defaults)},
+        onChanged: {addListener() {}}
+      },
+      runtime: {sendMessage() {}}
+    };
+    vm.runInContext(fs.readFileSync(
+      path.join(__dirname, '../v3/data/inject/isolated.js'), 'utf8'
+    ), context);
+  }
 
   return {document, port, window, tick, timers, advance: milliseconds => now += milliseconds};
 };
@@ -342,6 +362,87 @@ test('interpolates moves toward the latest cursor position and bends around a tu
   assert.ok(Math.abs(moves.at(-1)[0] - 100) <= 1);
   assert.ok(Math.abs(moves.at(-1)[1] - 100) <= 1);
   assert.equal(timers.size, 0);
+});
+
+test('re-entry starts at the last in-page move when mouseout is outside the viewport', () => {
+  const {document, port, window, tick} = loadInjection({fakeTimers: true});
+  window.innerWidth = 500;
+  window.innerHeight = 400;
+  port.dataset.mouseInterpolation = '35';
+  const target = new Element();
+  target.parentNode = document;
+  document.elementFromPoint = () => target;
+  const generated = [];
+  target.addEventListener('mousemove', e => generated.push(e.clientX));
+  window.dispatchEvent(createEvent('mousemove', {
+    clientX: 150, clientY: 100, target
+  }));
+  window.dispatchEvent(createEvent('mouseout', {
+    clientX: 520, clientY: 100, target, relatedTarget: null
+  }));
+  window.dispatchEvent(createEvent('mouseenter', {
+    clientX: 350, clientY: 100, relatedTarget: null
+  }));
+  tick();
+  assert.ok(generated[0] > 150 && generated[0] < 350);
+});
+
+test('main and isolated scripts share the port carrying interpolation settings', () => {
+  const {document, port, window, tick} = loadInjection({fakeTimers: true, loadIsolated: true});
+  assert.equal(document.getElementById('lwys-ctv-port'), port);
+  assert.equal(Number(port.dataset.mouseInterpolation), 35);
+  const target = new Element();
+  target.parentNode = document;
+  document.elementFromPoint = () => target;
+  const generated = [];
+  target.addEventListener('mousemove', e => generated.push(e.clientX));
+  window.dispatchEvent(createEvent('mouseout', {
+    clientX: 0, clientY: 0, target, relatedTarget: null
+  }));
+  window.dispatchEvent(createEvent('mouseenter', {
+    clientX: 100, clientY: 0, relatedTarget: null
+  }));
+  tick();
+  assert.ok(generated.length > 0);
+});
+
+test('re-entry clamps an off-page exit when there is no prior mousemove', () => {
+  const {document, port, window, tick} = loadInjection({fakeTimers: true});
+  window.innerWidth = 500;
+  window.innerHeight = 400;
+  port.dataset.mouseInterpolation = '35';
+  const target = new Element();
+  target.parentNode = document;
+  document.elementFromPoint = () => target;
+  const generated = [];
+  target.addEventListener('mousemove', e => generated.push(e.clientX));
+  window.dispatchEvent(createEvent('mouseout', {
+    clientX: 520, clientY: 100, target, relatedTarget: null
+  }));
+  window.dispatchEvent(createEvent('mouseenter', {
+    clientX: 350, clientY: 100, relatedTarget: null
+  }));
+  tick();
+  assert.ok(generated[0] < 500);
+});
+
+test('pointermove remains available while mousemove is interpolated', () => {
+  const {document, port, window} = loadInjection({fakeTimers: true});
+  port.dataset.mouseInterpolation = '35';
+  const target = new Element();
+  target.parentNode = document;
+  document.elementFromPoint = () => target;
+  window.dispatchEvent(createEvent('mouseout', {
+    clientX: 0, clientY: 0, target, relatedTarget: null
+  }));
+  window.dispatchEvent(createEvent('mouseenter', {
+    clientX: 100, clientY: 0, relatedTarget: null
+  }));
+  const move = createEvent('pointermove', {
+    pointerType: 'mouse', clientX: 110, clientY: 0
+  });
+  window.dispatchEvent(move);
+  assert.equal(move.immediatePropagationStopped, undefined);
 });
 
 test('click snaps to its position and cancels pending interpolation', () => {

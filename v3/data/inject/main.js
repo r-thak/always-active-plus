@@ -1,12 +1,8 @@
 /* global navigation */
 {
   /* port is used to communicate between chrome and page scripts */
-  let port;
-  try {
-    port = document.getElementById('lwys-ctv-port');
-    port.remove();
-  }
-  catch (e) {
+  let port = document.getElementById('lwys-ctv-port');
+  if (!port) {
     port = document.createElement('span');
     port.id = 'lwys-ctv-port';
     document.documentElement.append(port);
@@ -209,9 +205,13 @@
 
   let mouseExitPoint;
   let mouseExitTarget;
+  let lastMousePoint;
+  let lastMouseTarget;
   let mousePath;
   let syntheticMouseMove = false;
   const mouseSetting = name => Math.max(0, Math.min(100, Number(port.dataset[name]) || 0));
+  const inViewport = (position, size) => Math.max(0,
+    Math.min(Number.isFinite(size) ? size - 1 : position, position));
   const stopMousePath = () => {
     if (mousePath?.timer) clearTimeout(mousePath.timer);
     mousePath = undefined;
@@ -263,6 +263,8 @@
       path.ancestors = nextPath;
     }
     path.position = end;
+    lastMousePoint = end;
+    lastMouseTarget = path.target;
     if (emitMove && path.target) {
       syntheticMouseMove = true;
       try {
@@ -371,8 +373,12 @@
         stopMousePath();
         reentry[e.type.startsWith('pointer') ? 'pointer' : 'mouse'] = true;
         if (e.type === 'mouseout') {
-          mouseExitPoint = {x: e.clientX, y: e.clientY};
-          mouseExitTarget = e.target;
+          // Browser exit coordinates may already be outside the viewport.
+          mouseExitPoint = lastMousePoint || {
+            x: inViewport(e.clientX, window.innerWidth),
+            y: inViewport(e.clientY, window.innerHeight)
+          };
+          mouseExitTarget = lastMouseTarget || e.target;
         }
       }
       if (isPageExit(e) || e.target === document.documentElement || e.target === document.body) {
@@ -428,16 +434,14 @@
       }
       return block(e);
     }
+    if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
+      lastMousePoint = {x: e.clientX, y: e.clientY};
+      lastMouseTarget = e.target;
+    }
     mouseExitPoint = undefined;
     reentry.mouse = false;
   }, true);
-  window.addEventListener('pointermove', e => {
-    if (mousePath && (e.pointerType === 'mouse' || !e.pointerType)) {
-      if (Date.now() - mousePath.lastTick < 100 &&
-          Date.now() - mousePath.started < 1500) return block(e);
-      stopMousePath();
-      reentry.mouse = false;
-    }
+  window.addEventListener('pointermove', () => {
     reentry.pointer = false;
   }, true);
   const snapMousePath = e => {

@@ -17,9 +17,12 @@ exceptions.
 
 ```sh
 node --test test/*.test.js
+node scripts/test-browser-interpolation.mjs
 npx --yes web-ext@10.5.0 lint --source-dir v3
 npx --yes web-ext@10.5.0 build --source-dir v3
 ```
+
+The browser interpolation test drives real Chrome mouse input through the injected script. Set `CHROME_BIN` to a Chromium-based browser binary if Chrome is installed elsewhere.
 
 To create a Chrome-compatible MV3 build and ZIP package:
 

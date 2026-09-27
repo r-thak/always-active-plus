@@ -6,12 +6,8 @@
   https://oncode-frontend.github.io/tab_detector/
 */
 
-let port;
-try {
-  port = document.getElementById('lwys-ctv-port');
-  port.remove();
-}
-catch (e) {
+let port = document.getElementById('lwys-ctv-port');
+if (!port) {
   port = document.createElement('span');
   port.id = 'lwys-ctv-port';
   document.documentElement.append(port);
