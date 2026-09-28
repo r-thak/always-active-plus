@@ -137,6 +137,7 @@
 
   /* focus */
   let focusReentry = false;
+  let focusGap;
   Document.prototype.hasFocus = new Proxy(Document.prototype.hasFocus, {
     apply(target, self, args) {
       if (port.dataset.enabled === 'true' && port.dataset.focus !== 'false') {
@@ -163,6 +164,17 @@
 
   /* blur */
   const onblur = e => {
+    const visiblePoint = lastMousePoint &&
+      lastMousePoint.x >= 0 && lastMousePoint.y >= 0 &&
+      lastMousePoint.x < window.innerWidth && lastMousePoint.y < window.innerHeight;
+    if ((e.target === document || e.target === window) &&
+        port.dataset.enabled === 'true' && lastMousePoint &&
+        Number(port.dataset.mouseInterpolation) > 0) {
+      focusGap = {
+        point: visiblePoint ? lastMousePoint : lastPagePoint || lastMousePoint,
+        target: visiblePoint ? lastMouseTarget : lastPageTarget || lastMouseTarget
+      };
+    }
     if (port.dataset.enabled === 'true' && port.dataset.blur !== 'false') {
       if (e.target === document || e.target === window || isPageExit(e)) {
         if (isPageExit(e)) {
@@ -205,13 +217,16 @@
 
   let mouseExitPoint;
   let mouseExitTarget;
+  let priorMousePoint;
   let lastMousePoint;
   let lastMouseTarget;
+  let lastPagePoint;
+  let lastPageTarget;
+  let lastRealMoveTime;
   let mousePath;
   let syntheticMouseMove = false;
-  const mouseSetting = name => Math.max(0, Math.min(100, Number(port.dataset[name]) || 0));
-  const inViewport = (position, size) => Math.max(0,
-    Math.min(Number.isFinite(size) ? size - 1 : position, position));
+  let syntheticPointerMove = false;
+  const mouseSetting = name => Math.max(0, Math.min(2, Number(port.dataset[name]) || 0));
   const stopMousePath = () => {
     if (mousePath?.timer) clearTimeout(mousePath.timer);
     mousePath = undefined;
@@ -223,16 +238,31 @@
     }
     return result;
   };
-  const fire = (target, type, x, y, relatedTarget) => {
+  const fire = (target, type, x, y, relatedTarget, buttons = 0) => {
     if (!target?.dispatchEvent) return;
     target.dispatchEvent(new MouseEvent(type, {
       bubbles: type === 'mouseout' || type === 'mouseover' || type === 'mousemove',
       cancelable: true,
       clientX: x,
       clientY: y,
+      buttons,
       relatedTarget: relatedTarget || null,
       view: window
     }));
+  };
+  const coveredCanvasExit = e => {
+    if (e.target?.tagName !== 'CANVAS' || !e.relatedTarget ||
+        typeof e.target.getBoundingClientRect !== 'function') return false;
+    const rect = e.target.getBoundingClientRect();
+    return e.clientX >= rect.left && e.clientX <= rect.right &&
+      e.clientY >= rect.top && e.clientY <= rect.bottom;
+  };
+  const rememberPointer = (path, e) => {
+    if (Number.isFinite(e.buttons)) path.buttons = e.buttons;
+    if (Number.isFinite(e.pointerId)) path.pointerId = e.pointerId;
+    if (typeof e.pointerType === 'string' && e.pointerType) path.pointerType = e.pointerType;
+    if (typeof e.isPrimary === 'boolean') path.isPrimary = e.isPrimary;
+    if (Number.isFinite(e.pressure)) path.pressure = e.pressure;
   };
   const moveMousePath = (path, end, emitMove) => {
     const start = path.position;
@@ -263,17 +293,128 @@
       path.ancestors = nextPath;
     }
     path.position = end;
+    priorMousePoint = start;
     lastMousePoint = end;
     lastMouseTarget = path.target;
-    if (emitMove && path.target) {
+    if (end.x >= 0 && end.y >= 0 && end.x < window.innerWidth && end.y < window.innerHeight) {
+      lastPagePoint = end;
+      lastPageTarget = path.target;
+    }
+    const moveTarget = path.logicalTarget || path.target;
+    if (focusGap) {
+      focusGap.point = end;
+      focusGap.target = moveTarget;
+    }
+    if (emitMove && moveTarget) {
       syntheticMouseMove = true;
+      syntheticPointerMove = true;
       try {
-        fire(path.target, 'mousemove', end.x, end.y, null);
+        if (typeof PointerEvent === 'function') {
+          const properties = {
+            bubbles: true,
+            cancelable: true,
+            clientX: end.x,
+            clientY: end.y,
+            buttons: path.buttons,
+            pressure: path.pressure,
+            pointerId: path.pointerId,
+            pointerType: path.pointerType,
+            isPrimary: path.isPrimary,
+            view: window
+          };
+          moveTarget.dispatchEvent(new PointerEvent('pointerrawupdate', properties));
+          moveTarget.dispatchEvent(new PointerEvent('pointermove', properties));
+        }
+        fire(moveTarget, 'mousemove', end.x, end.y, null, path.buttons);
       }
       finally {
         syntheticMouseMove = false;
+        syntheticPointerMove = false;
       }
     }
+  };
+  const distanceBetween = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+  const curveTangent = (before, at, after, beforeLength, afterLength, scale) => {
+    const component = axis => {
+      const incoming = at[axis] - before[axis];
+      const outgoing = after[axis] - at[axis];
+      if (incoming * outgoing <= 0) return 0;
+      const smooth = Math.abs(outgoing) * scale / (beforeLength + afterLength);
+      const monotoneLimit = 3 * Math.min(Math.abs(incoming), Math.abs(outgoing));
+      return Math.sign(outgoing) * Math.min(smooth, monotoneLimit);
+    };
+    return {x: component('x'), y: component('y')};
+  };
+  const buildMouseCurve = path => {
+    const samples = [{distance: 0, point: path.points[0]}];
+    let distance = 0;
+    for (let i = 0; i < path.points.length - 1; i += 1) {
+      const start = path.points[i];
+      const end = path.points[i + 1];
+      const segmentLength = distanceBetween(start, end);
+      const previous = path.points[i - 1];
+      const next = path.points[i + 2];
+      const previousLength = previous ? distanceBetween(previous, start) : 0;
+      const nextLength = next ? distanceBetween(end, next) : 0;
+      const priorSpeed = Math.hypot(path.velocity.x, path.velocity.y);
+      const alignment = priorSpeed > 1 && segmentLength > 0 ? Math.max(0,
+        (path.velocity.x * (end.x - start.x) + path.velocity.y * (end.y - start.y)) /
+          (priorSpeed * segmentLength)) : 0;
+      const startTangent = i === 0 && alignment > 0 ? {
+        x: (end.x - start.x) * alignment,
+        y: (end.y - start.y) * alignment
+      } : previous ? curveTangent(previous, start, end,
+          previousLength, segmentLength, segmentLength) :
+        {x: end.x - start.x, y: end.y - start.y};
+      const endTangent = next ? curveTangent(start, end, next,
+        segmentLength, nextLength, segmentLength) :
+        {x: end.x - start.x, y: end.y - start.y};
+      const steps = Math.max(8, Math.ceil(segmentLength / 8));
+      let previousPoint = samples[samples.length - 1].point;
+      for (let step = 1; step <= steps; step += 1) {
+        const t = step / steps;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const point = {
+          x: (2 * t3 - 3 * t2 + 1) * start.x + (t3 - 2 * t2 + t) * startTangent.x +
+            (-2 * t3 + 3 * t2) * end.x + (t3 - t2) * endTangent.x,
+          y: (2 * t3 - 3 * t2 + 1) * start.y + (t3 - 2 * t2 + t) * startTangent.y +
+            (-2 * t3 + 3 * t2) * end.y + (t3 - t2) * endTangent.y
+        };
+        distance += distanceBetween(previousPoint, point);
+        samples.push({distance, point, segment: i});
+        previousPoint = point;
+      }
+    }
+    path.curve = samples;
+    path.length = distance;
+    path.progress = 0;
+  };
+  const appendMousePoint = (path, point) => {
+    const last = path.points[path.points.length - 1];
+    if (distanceBetween(last, point) < 0.5) return;
+    if (path.curve) {
+      const remaining = path.curve.find(sample => sample.distance > path.progress)?.segment ??
+        path.points.length - 1;
+      path.points = [path.position, ...path.points.slice(remaining + 1)];
+    }
+    path.points.push(point);
+    buildMouseCurve(path);
+  };
+  const pointAlongMousePath = (path, distance) => {
+    const samples = path.curve;
+    for (let i = 1; i < samples.length; i += 1) {
+      if (distance <= samples[i].distance) {
+        const start = samples[i - 1];
+        const end = samples[i];
+        const fraction = (distance - start.distance) / (end.distance - start.distance || 1);
+        return {
+          x: start.point.x + (end.point.x - start.point.x) * fraction,
+          y: start.point.y + (end.point.y - start.point.y) * fraction
+        };
+      }
+    }
+    return path.points[path.points.length - 1];
   };
   const tickMousePath = () => {
     const path = mousePath;
@@ -284,38 +425,37 @@
       return;
     }
     const now = Date.now();
-    if (now - path.started >= 1500 || now - path.lastTick >= 100) {
-      moveMousePath(path, path.destination, true);
-      stopMousePath();
-      reentry.mouse = false;
-      return;
-    }
+    // Cap elapsed time so a throttled timer cannot produce a long jump.
+    const dt = Math.min(0.032, Math.max(0.008, (now - path.lastTick) / 1000));
     path.lastTick = now;
-    const dx = path.destination.x - path.position.x;
-    const dy = path.destination.y - path.position.y;
-    const remaining = Math.hypot(dx, dy);
-    if (remaining <= 0.75 && Math.hypot(path.velocity.x, path.velocity.y) <= 0.75) {
-      moveMousePath(path, path.destination, true);
+    const destination = path.points[path.points.length - 1];
+    const gap = distanceBetween(path.position, destination);
+    const remaining = path.length - path.progress;
+    if (path.progress >= path.length) {
+      if (gap > 0) moveMousePath(path, destination, true);
       stopMousePath();
       reentry.mouse = false;
       return;
     }
 
-    // Follow the latest position like a drawing-app stabilizer. The low-pass
-    // position filter handles distance; retained velocity rounds off turns.
-    const interpolation = mouseSetting('mouseInterpolation') / 100;
-    const alpha = 1 - Math.exp(-16 / (12 + interpolation * 140));
-    const ease = value => value * value * (3 - 2 * value);
-    const startFactor = 1 - mouseSetting('mouseStartSmoothness') / 125 *
-      (1 - ease(Math.min(1, (now - path.started) / 120)));
-    const stopFactor = 1 - mouseSetting('mouseStopSmoothness') / 125 *
-      (1 - ease(Math.min(1, remaining / 80)));
-    const blend = 0.65 - interpolation * 0.2;
-    path.velocity.x = path.velocity.x * (1 - blend) + dx * alpha * startFactor * stopFactor * blend;
-    path.velocity.y = path.velocity.y * (1 - blend) + dy * alpha * startFactor * stopFactor * blend;
-    const end = {
-      x: path.position.x + path.velocity.x,
-      y: path.position.y + path.velocity.y
+    // Move along a curve through the recorded positions at a bounded speed.
+    // Rebuilding the curve on each real move starts at the generated position,
+    // so new input changes the direction without teleporting the cursor.
+    const interpolation = mouseSetting('mouseInterpolation');
+    const startSmoothness = mouseSetting('mouseStartSmoothness');
+    const stopSmoothness = mouseSetting('mouseStopSmoothness');
+    const acceleration = 4000 * Math.pow(0.06, startSmoothness);
+    const braking = 4000 * Math.pow(0.06, stopSmoothness);
+    const cruise = 1200 * Math.pow(0.08, interpolation);
+    const targetSpeed = Math.min(cruise, Math.sqrt(2 * braking * remaining));
+    path.speed += Math.max(-braking * dt,
+      Math.min(acceleration * dt, targetSpeed - path.speed));
+    const oldPosition = path.position;
+    path.progress = Math.min(path.length, path.progress + path.speed * dt);
+    const end = pointAlongMousePath(path, path.progress);
+    path.velocity = {
+      x: (end.x - oldPosition.x) / dt,
+      y: (end.y - oldPosition.y) / dt
     };
     moveMousePath(path, end, true);
     if (mousePath === path) {
@@ -323,27 +463,41 @@
     }
   };
   const replayMousePath = endEvent => {
-    const start = mouseExitPoint;
     const end = {x: endEvent.clientX, y: endEvent.clientY};
+    const start = mouseExitPoint;
     const exitTarget = mouseExitTarget;
     mouseExitPoint = undefined;
     mouseExitTarget = undefined;
+    focusGap = undefined;
+    reentry.mouse = false;
+    reentry.pointer = false;
     if (!start || !Number.isFinite(start.x) || !Number.isFinite(start.y) ||
         !Number.isFinite(end.x) || !Number.isFinite(end.y) ||
         typeof document.elementFromPoint !== 'function' || typeof MouseEvent !== 'function') {
       return;
     }
-
     stopMousePath();
     const path = {
       position: start,
-      destination: end,
+      points: [start],
+      length: 0,
+      progress: 0,
       target: exitTarget,
+      logicalTarget: exitTarget?.tagName === 'CANVAS' ? exitTarget : undefined,
       ancestors: exitTarget ? ancestors(exitTarget) : [],
-      velocity: {x: 0, y: 0},
-      started: Date.now(),
+      velocity: priorMousePoint && lastMousePoint ? {
+        x: lastMousePoint.x - priorMousePoint.x,
+        y: lastMousePoint.y - priorMousePoint.y
+      } : {x: 0, y: 0},
+      buttons: Number.isFinite(endEvent.buttons) ? endEvent.buttons : 0,
+      pressure: Number.isFinite(endEvent.pressure) ? endEvent.pressure : 0,
+      pointerId: Number.isFinite(endEvent.pointerId) ? endEvent.pointerId : 1,
+      pointerType: endEvent.pointerType || 'mouse',
+      isPrimary: endEvent.isPrimary !== false,
+      speed: 0,
       lastTick: Date.now()
     };
+    appendMousePoint(path, end);
     if (mouseSetting('mouseInterpolation') === 0) {
       moveMousePath(path, end, false);
     }
@@ -352,11 +506,40 @@
       path.timer = setTimeout(tickMousePath, 16);
     }
   };
+  const startPendingMousePath = e => {
+    if (port.dataset.enabled !== 'true' ||
+        mouseSetting('mouseInterpolation') === 0 ||
+        !Number.isFinite(e.clientX) || !Number.isFinite(e.clientY)) return false;
+    if (mousePath) {
+      if (!mouseExitPoint && !focusGap) return false;
+      appendMousePoint(mousePath, {x: e.clientX, y: e.clientY});
+      rememberPointer(mousePath, e);
+      mouseExitPoint = undefined;
+      mouseExitTarget = undefined;
+      focusGap = undefined;
+      reentry.mouse = false;
+      reentry.pointer = false;
+      return true;
+    }
+    if (!mouseExitPoint && focusGap) {
+      mouseExitPoint = focusGap.point;
+      mouseExitTarget = focusGap.target;
+    }
+    if (!mouseExitPoint && lastMousePoint && lastRealMoveTime !== undefined &&
+        Date.now() - lastRealMoveTime >= 32 &&
+        distanceBetween(lastMousePoint, {x: e.clientX, y: e.clientY}) >= 24) {
+      mouseExitPoint = lastMousePoint;
+      mouseExitTarget = lastMouseTarget;
+    }
+    if (!mouseExitPoint) return false;
+    replayMousePath(e);
+    return Boolean(mousePath);
+  };
 
   const onleave = e => {
     if (port.dataset.enabled === 'true' && port.dataset.mouseleave !== 'false') {
+      if (coveredCanvasExit(e)) return block(e);
       if (isPageExit(e)) {
-        stopMousePath();
         reentry[e.type.startsWith('pointer') ? 'pointer' : 'mouse'] = true;
       }
       if (isPageExit(e) || e.target === document || e.target === window) {
@@ -369,17 +552,9 @@
 
   const onout = e => {
     if (port.dataset.enabled === 'true' && port.dataset.mouseout !== 'false') {
+      if (coveredCanvasExit(e)) return block(e);
       if (isPageExit(e)) {
-        stopMousePath();
         reentry[e.type.startsWith('pointer') ? 'pointer' : 'mouse'] = true;
-        if (e.type === 'mouseout') {
-          // Browser exit coordinates may already be outside the viewport.
-          mouseExitPoint = lastMousePoint || {
-            x: inViewport(e.clientX, window.innerWidth),
-            y: inViewport(e.clientY, window.innerHeight)
-          };
-          mouseExitTarget = lastMouseTarget || e.target;
-        }
       }
       if (isPageExit(e) || e.target === document.documentElement || e.target === document.body) {
         return block(e);
@@ -391,15 +566,14 @@
 
   const onenter = e => {
     const family = e.type.startsWith('pointer') ? 'pointer' : 'mouse';
+    if (startPendingMousePath(e)) return block(e);
     if (
       port.dataset.enabled === 'true' &&
       port.dataset.mouseleave !== 'false' &&
       reentry[family] &&
       isPageExit(e)
     ) {
-      if (family === 'mouse') {
-        replayMousePath(e);
-      }
+      startPendingMousePath(e);
       return block(e);
     }
   };
@@ -408,46 +582,90 @@
 
   const onover = e => {
     const family = e.type.startsWith('pointer') ? 'pointer' : 'mouse';
+    if (startPendingMousePath(e)) return block(e);
     if (
       port.dataset.enabled === 'true' &&
       port.dataset.mouseout !== 'false' &&
       reentry[family] &&
       isPageExit(e)
     ) {
+      startPendingMousePath(e);
       return block(e);
     }
   };
   window.addEventListener('mouseover', onover, true);
   window.addEventListener('pointerover', onover, true);
 
+  const rememberRealPoint = e => {
+    if (!Number.isFinite(e.clientX) || !Number.isFinite(e.clientY)) return;
+    const point = {x: e.clientX, y: e.clientY};
+    if (!lastMousePoint || distanceBetween(lastMousePoint, point) >= 0.5) {
+      priorMousePoint = lastMousePoint;
+      lastMousePoint = point;
+    }
+    lastMouseTarget = e.target;
+    if (point.x >= 0 && point.y >= 0 && point.x < window.innerWidth && point.y < window.innerHeight) {
+      lastPagePoint = point;
+      lastPageTarget = e.target;
+    }
+  };
+
   window.addEventListener('mousemove', e => {
     if (syntheticMouseMove) return;
+    if (startPendingMousePath(e)) return block(e);
+    lastRealMoveTime = Date.now();
     if (mousePath) {
-      if (Date.now() - mousePath.lastTick >= 100 ||
-          Date.now() - mousePath.started >= 1500) {
-        stopMousePath();
-        reentry.mouse = false;
-        return;
-      }
+      rememberPointer(mousePath, e);
       if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
-        mousePath.destination = {x: e.clientX, y: e.clientY};
+        appendMousePoint(mousePath, {x: e.clientX, y: e.clientY});
+      }
+      if (Date.now() - mousePath.lastTick > 100) {
+        clearTimeout(mousePath.timer);
+        mousePath.timer = setTimeout(tickMousePath, 0);
       }
       return block(e);
     }
-    if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
-      lastMousePoint = {x: e.clientX, y: e.clientY};
-      lastMouseTarget = e.target;
-    }
+    rememberRealPoint(e);
     mouseExitPoint = undefined;
     reentry.mouse = false;
   }, true);
-  window.addEventListener('pointermove', () => {
+  const onPointerMove = e => {
+    if (syntheticPointerMove) return;
+    if (startPendingMousePath(e)) return block(e);
+    lastRealMoveTime = Date.now();
+    if (mousePath) {
+      rememberPointer(mousePath, e);
+      if (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
+        appendMousePoint(mousePath, {x: e.clientX, y: e.clientY});
+      }
+      if (Date.now() - mousePath.lastTick > 100) {
+        clearTimeout(mousePath.timer);
+        mousePath.timer = setTimeout(tickMousePath, 0);
+      }
+      return block(e);
+    }
+    rememberRealPoint(e);
     reentry.pointer = false;
-  }, true);
+  };
+  window.addEventListener('pointermove', onPointerMove, true);
+  window.addEventListener('pointerrawupdate', onPointerMove, true);
   const snapMousePath = e => {
-    if (!mousePath || !Number.isFinite(e.clientX) || !Number.isFinite(e.clientY)) return;
+    if (!Number.isFinite(e.clientX) || !Number.isFinite(e.clientY)) return;
+    focusGap = undefined;
+    if (!mousePath) {
+      mouseExitPoint = undefined;
+      mouseExitTarget = undefined;
+      priorMousePoint = lastMousePoint;
+      lastMousePoint = {x: e.clientX, y: e.clientY};
+      lastMouseTarget = e.target;
+      reentry.mouse = false;
+      reentry.pointer = false;
+      return;
+    }
     const path = mousePath;
+    rememberPointer(path, e);
     stopMousePath();
+    path.logicalTarget = undefined;
     moveMousePath(path, {x: e.clientX, y: e.clientY}, true);
     reentry.mouse = false;
   };

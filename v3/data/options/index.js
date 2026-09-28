@@ -15,10 +15,26 @@ const updateHostMode = allSites => {
     'Included hostnames, separated by commas. Example:\n\nexample.com, *.example.com, www.example.com';
 };
 
+const mouseValue = value => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  // Values above the new range are legacy percentages from the old sliders.
+  return Math.max(0, Math.min(2, numeric > 2 ? numeric / 100 : numeric));
+};
+
 for (const id of ['mouseInterpolation', 'mouseStartSmoothness', 'mouseStopSmoothness']) {
   const slider = document.getElementById(id);
   const output = document.getElementById(id + 'Value');
-  slider.addEventListener('input', () => output.value = slider.value);
+  const save = () => chrome.storage.local.set({[id]: Number(slider.value)});
+  slider.addEventListener('input', () => {
+    output.value = slider.value;
+    clearTimeout(slider.saveTimer);
+    slider.saveTimer = setTimeout(save, 120);
+  });
+  slider.addEventListener('change', () => {
+    clearTimeout(slider.saveTimer);
+    save();
+  });
   output.value = slider.value;
 }
 
@@ -37,9 +53,9 @@ chrome.storage.local.get({
   'mouseout': true,
   'keyboard': true,
   'blockedKeys': ['AltGraph'],
-  'mouseInterpolation': 35,
-  'mouseStartSmoothness': 30,
-  'mouseStopSmoothness': 35,
+  'mouseInterpolation': 0.13,
+  'mouseStartSmoothness': 0.01,
+  'mouseStopSmoothness': 0.01,
   'log': false,
   'policies': null,
   'hosts': []
@@ -60,7 +76,7 @@ chrome.storage.local.get({
   document.getElementById('blockedKeys').value = (Array.isArray(prefs.blockedKeys) ? prefs.blockedKeys : []).join(', ');
   for (const id of ['mouseInterpolation', 'mouseStartSmoothness', 'mouseStopSmoothness']) {
     const slider = document.getElementById(id);
-    slider.value = prefs[id];
+    slider.value = mouseValue(prefs[id]);
     document.getElementById(id + 'Value').value = slider.value;
   }
   document.getElementById('log').checked = prefs.log;

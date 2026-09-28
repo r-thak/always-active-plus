@@ -37,14 +37,14 @@
     <input type="checkbox" id="log">
   </div>
   <h1>Mouse movement on re-entry</h1>
-  <p>Interpolation 0 replays hover changes immediately. Higher values stabilize mouse movement toward the real cursor. Start and stop smoothness ease movement at each end. Real moves resume as soon as the generated cursor catches up.</p>
+  <p>These sliders apply as you move them. Interpolation 0 leaves mouse movement immediate; higher values slow the generated path after the browser loses focus. Start and stop smoothness control acceleration and braking. A second return joins the path in order, and real moves resume when the generated cursor catches up.</p>
   <div class="grid">
-    <label for="mouseInterpolation">Interpolation: <output id="mouseInterpolationValue"></output></label>
-    <input type="range" id="mouseInterpolation" min="0" max="100" value="35">
-    <label for="mouseStartSmoothness">Start smoothness: <output id="mouseStartSmoothnessValue"></output></label>
-    <input type="range" id="mouseStartSmoothness" min="0" max="100" value="30">
-    <label for="mouseStopSmoothness">Stop smoothness: <output id="mouseStopSmoothnessValue"></output></label>
-    <input type="range" id="mouseStopSmoothness" min="0" max="100" value="35">
+    <label for="mouseInterpolation">Interpolation (0-2): <output id="mouseInterpolationValue"></output></label>
+    <input type="range" id="mouseInterpolation" min="0" max="2" step="0.01" value="0.13">
+    <label for="mouseStartSmoothness">Start smoothness (0-2): <output id="mouseStartSmoothnessValue"></output></label>
+    <input type="range" id="mouseStartSmoothness" min="0" max="2" step="0.01" value="0.01">
+    <label for="mouseStopSmoothness">Stop smoothness (0-2): <output id="mouseStopSmoothnessValue"></output></label>
+    <input type="range" id="mouseStopSmoothness" min="0" max="2" step="0.01" value="0.01">
   </div>
   <h1>Blocked Keyboard Events</h1>
   <p>Comma-separated <code>KeyboardEvent.key</code>, <code>KeyboardEvent.code</code>, or numeric <code>keyCode</code> values.</p>
