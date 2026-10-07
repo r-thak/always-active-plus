@@ -15,17 +15,18 @@ const updateHostMode = allSites => {
     'Included hostnames, separated by commas. Example:\n\nexample.com, *.example.com, www.example.com';
 };
 
-const mouseValue = value => {
+const mouseValue = (value, max = 2) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
   // Values above the new range are legacy percentages from the old sliders.
-  return Math.max(0, Math.min(2, numeric > 2 ? numeric / 100 : numeric));
+  return Math.max(0, Math.min(max, numeric > 2 ? numeric / 100 : numeric));
 };
 
-for (const id of ['mouseInterpolation', 'mouseStartSmoothness', 'mouseStopSmoothness']) {
+for (const id of ['mouseHumanize', 'mouseInterpolation', 'mouseStartSmoothness', 'mouseStopSmoothness']) {
   const slider = document.getElementById(id);
   const output = document.getElementById(id + 'Value');
-  const save = () => chrome.storage.local.set({[id]: Number(slider.value)});
+  const save = () => chrome.storage.local.set({[id]:
+    Number(slider.value) * (id === 'mouseHumanize' ? 100 : 1)});
   slider.addEventListener('input', () => {
     output.value = slider.value;
     clearTimeout(slider.saveTimer);
@@ -53,9 +54,10 @@ chrome.storage.local.get({
   'mouseout': true,
   'keyboard': true,
   'blockedKeys': ['AltGraph'],
-  'mouseInterpolation': 0.13,
-  'mouseStartSmoothness': 0.01,
-  'mouseStopSmoothness': 0.01,
+  'mouseHumanize': 50,
+  'mouseInterpolation': 0.35,
+  'mouseStartSmoothness': 0.3,
+  'mouseStopSmoothness': 0.3,
   'log': false,
   'policies': null,
   'hosts': []
@@ -74,9 +76,11 @@ chrome.storage.local.get({
   document.getElementById('mouseout').checked = prefs.mouseout;
   document.getElementById('keyboard').checked = prefs.keyboard;
   document.getElementById('blockedKeys').value = (Array.isArray(prefs.blockedKeys) ? prefs.blockedKeys : []).join(', ');
-  for (const id of ['mouseInterpolation', 'mouseStartSmoothness', 'mouseStopSmoothness']) {
+  for (const id of ['mouseHumanize', 'mouseInterpolation', 'mouseStartSmoothness', 'mouseStopSmoothness']) {
     const slider = document.getElementById(id);
-    slider.value = mouseValue(prefs[id]);
+    slider.value = id === 'mouseHumanize' ?
+      Math.max(0, Math.min(1, Number(prefs[id]) / 100 || 0)) :
+      mouseValue(prefs[id], id === 'mouseInterpolation' ? 1 : 2);
     document.getElementById(id + 'Value').value = slider.value;
   }
   document.getElementById('log').checked = prefs.log;
@@ -105,6 +109,7 @@ document.getElementById('save').addEventListener('click', async () => {
       .split(/[\n,]+/)
       .map(key => key.trim())
       .filter(Boolean))],
+    'mouseHumanize': Number(document.getElementById('mouseHumanize').value) * 100,
     'mouseInterpolation': Number(document.getElementById('mouseInterpolation').value),
     'mouseStartSmoothness': Number(document.getElementById('mouseStartSmoothness').value),
     'mouseStopSmoothness': Number(document.getElementById('mouseStopSmoothness').value),

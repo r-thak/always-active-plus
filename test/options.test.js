@@ -36,13 +36,19 @@ test('mouse sliders save their values without Save Options', () => {
     clearTimeout(id) { timers.delete(id); }
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../v3/data/options/index.js'), 'utf8'), context);
+  const humanize = element('mouseHumanize');
+  humanize.value = '0.5';
+  humanize.listeners.get('input')();
+  for (const callback of timers.values()) callback();
+  assert.equal(writes[0].mouseHumanize, 50);
+
   const slider = element('mouseInterpolation');
   slider.value = '0.82';
   slider.listeners.get('input')();
   assert.equal(element('mouseInterpolationValue').value, '0.82');
-  assert.equal(writes.length, 0);
+  assert.equal(writes.length, 1);
   for (const callback of timers.values()) callback();
-  assert.equal(writes[0].mouseInterpolation, 0.82);
+  assert.equal(writes.at(-1).mouseInterpolation, 0.82);
   slider.value = '0.91';
   slider.listeners.get('input')();
   slider.listeners.get('change')();

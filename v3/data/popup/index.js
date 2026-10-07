@@ -86,7 +86,6 @@ power.addEventListener('click', async () => {
   render({...siteState, enabled: result.enabled, ruleCount: result.ruleCount});
   status.textContent = result.enabled ? 'Active on this site' : 'Paused on this site';
   hint.textContent = 'Reloading with the new setting…';
-  power.disabled = true;
 });
 
 document.getElementById('settings').addEventListener('click', () => {

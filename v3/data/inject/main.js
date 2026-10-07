@@ -226,7 +226,9 @@
   let mousePath;
   let syntheticMouseMove = false;
   let syntheticPointerMove = false;
-  const mouseSetting = name => Math.max(0, Math.min(2, Number(port.dataset[name]) || 0));
+  const mouseSetting = name => Math.max(0,
+    Math.min(name === 'mouseInterpolation' ? 1 : 2, Number(port.dataset[name]) || 0));
+  const mouseHumanize = () => Math.max(0, Math.min(100, Number(port.dataset.mouseHumanize) || 0)) / 100;
   const stopMousePath = () => {
     if (mousePath?.timer) clearTimeout(mousePath.timer);
     mousePath = undefined;
@@ -444,14 +446,24 @@
     const interpolation = mouseSetting('mouseInterpolation');
     const startSmoothness = mouseSetting('mouseStartSmoothness');
     const stopSmoothness = mouseSetting('mouseStopSmoothness');
-    const acceleration = 4000 * Math.pow(0.06, startSmoothness);
-    const braking = 4000 * Math.pow(0.06, stopSmoothness);
-    const cruise = 1200 * Math.pow(0.08, interpolation);
-    const targetSpeed = Math.min(cruise, Math.sqrt(2 * braking * remaining));
-    path.speed += Math.max(-braking * dt,
-      Math.min(acceleration * dt, targetSpeed - path.speed));
+    const acceleration = 60000 * Math.pow(0.06, startSmoothness);
+    const braking = 60000 * Math.pow(0.06, stopSmoothness);
+    // Keep near-zero settings close to immediate while retaining a slow upper end.
+    const cruise = 8000 * Math.pow(0.012, interpolation);
+    const targetSpeed = stopSmoothness === 0 ? cruise :
+      Math.min(cruise, Math.sqrt(2 * braking * remaining));
+    if (startSmoothness === 0) {
+      path.speed = targetSpeed;
+    }
+    else {
+      path.speed += Math.max(-braking * dt,
+        Math.min(acceleration * dt, targetSpeed - path.speed));
+    }
     const oldPosition = path.position;
-    path.progress = Math.min(path.length, path.progress + path.speed * dt);
+    const progressRatio = path.length ? path.progress / path.length : 0;
+    const paceVariation = 1 + path.humanize * 0.12 *
+      Math.sin(progressRatio * Math.PI * 2 + path.timingPhase);
+    path.progress = Math.min(path.length, path.progress + path.speed * dt * paceVariation);
     const end = pointAlongMousePath(path, path.progress);
     path.velocity = {
       x: (end.x - oldPosition.x) / dt,
@@ -494,9 +506,22 @@
       pointerId: Number.isFinite(endEvent.pointerId) ? endEvent.pointerId : 1,
       pointerType: endEvent.pointerType || 'mouse',
       isPrimary: endEvent.isPrimary !== false,
+      humanize: mouseHumanize(),
+      timingPhase: Math.random() * Math.PI * 2,
       speed: 0,
       lastTick: Date.now()
     };
+    if (path.humanize > 0) {
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const distance = Math.hypot(dx, dy);
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const offset = Math.min(48, distance * 0.14) * path.humanize * (0.35 + Math.random() * 0.65);
+      path.points.push({
+        x: (start.x + end.x) / 2 - dy / (distance || 1) * offset * side,
+        y: (start.y + end.y) / 2 + dx / (distance || 1) * offset * side
+      });
+    }
     appendMousePoint(path, end);
     if (mouseSetting('mouseInterpolation') === 0) {
       moveMousePath(path, end, false);

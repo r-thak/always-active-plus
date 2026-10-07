@@ -355,7 +355,7 @@ test('focus loss starts gradual pointer and mouse movement at the last real poin
   assert.equal(returnEvent.immediatePropagationStopped, true);
   tick();
   assert.ok(pointerMoves.length > 0);
-  assert.ok(Math.hypot(pointerMoves[0][0] - 40, pointerMoves[0][1] - 50) < 3);
+  assert.ok(Math.hypot(pointerMoves[0][0] - 40, pointerMoves[0][1] - 50) < 18);
   assert.deepEqual(pointerMoves, mouseMoves);
   for (let i = 0; i < 500 && timers.size; i += 1) tick();
   assert.ok(Math.hypot(pointerMoves.at(-1)[0] - 240, pointerMoves.at(-1)[1] - 100) < 2);
@@ -408,7 +408,7 @@ test('re-entry curves stay inside the recorded bounds when input reverses repeat
     }));
   }
   for (let i = 0; i < 1500 && timers.size; i += 1) tick();
-  assert.ok(pointerMoves.length > 20);
+  assert.ok(pointerMoves.length > 4);
   assert.ok(pointerMoves.every(([x, y]) => x >= 99 && x <= 111 && y >= -1 && y <= 121),
     'The interpolated curve overshot the points captured over the overlay');
   assert.ok(Math.hypot(pointerMoves.at(-1)[0] - 110, pointerMoves.at(-1)[1] - 120) < 2);
@@ -451,9 +451,23 @@ test('interpolation setting changes speed across its configured range', () => {
   assert.ok(advance(0.1) > advance(0.8) * 2);
 });
 
+test('near-zero interpolation with no start or stop smoothing moves quickly', () => {
+  const {move, blur, enter, tick, timers, pointerMoves} = focusedCanvas({
+    interpolation: 0.001,
+    start: 0,
+    stop: 0
+  });
+  move(0, 0);
+  blur();
+  enter(200, 0);
+  for (let i = 0; i < 2 && timers.size; i += 1) tick();
+  assert.ok(Math.abs(pointerMoves.at(-1)[0] - 200) < 2,
+    'A short, near-zero interpolation path should finish in a few frames');
+});
+
 test('saved slider values reach the injected page without a reload', () => {
   const {port, setPreference} = loadInjection({loadIsolated: true});
-  assert.equal(port.dataset.mouseInterpolation, '0.13');
+  assert.equal(port.dataset.mouseInterpolation, '0.35');
   setPreference('mouseInterpolation', 0.82);
   setPreference('mouseStartSmoothness', 1.22);
   setPreference('mouseStopSmoothness', 0.88);
